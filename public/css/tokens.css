@@ -1,0 +1,69 @@
+/* tokens.css — Piqabu / AhTohMoh design language.
+   Near-black canvas, faint grid, Inter-light, wide-tracked uppercase micro-labels,
+   monochrome with the most restrained accents. */
+
+:root {
+  --bg: #080808;
+  --pane: #0d0d0d;
+  --pane-2: #131313;
+  --field: #1a1a1a;
+  --field-2: #202020;
+
+  --line: rgba(255, 255, 255, 0.09);
+  --line-soft: rgba(255, 255, 255, 0.048);
+  --line-strong: rgba(255, 255, 255, 0.18);
+
+  --text: #f4f4f4;
+  --text-dim: rgba(255, 255, 255, 0.62);
+  --text-faint: rgba(255, 255, 255, 0.34);
+  --text-ghost: rgba(255, 255, 255, 0.22);
+
+  --accent: #ffffff;
+  --accent-soft: rgba(255, 255, 255, 0.14);
+  --danger: #ff453a;
+
+  --radius: 10px;
+  --radius-sm: 7px;
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+
+  --label: 10px;          /* micro-label size */
+  --tracking: 0.16em;
+  --topbar-h: 56px;
+  --foot-h: 30px;
+  --pane-w: 340px;
+}
+
+* , *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-weight: 300;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.grid-bg {
+  position: fixed; inset: 0; z-index: 0; pointer-events: none;
+  background-image:
+    linear-gradient(var(--line-soft) 1px, transparent 1px),
+    linear-gradient(90deg, var(--line-soft) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+
+/* shared micro-label */
+.pane-label, .field-label, .stage-field span, .menu-tag {
+  font-size: var(--label);
+  letter-spacing: var(--tracking);
+  text-transform: uppercase;
+  color: var(--text-faint);
+  font-weight: 400;
+}
+
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 8px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.18); }
+::-webkit-scrollbar-track { background: transparent; }

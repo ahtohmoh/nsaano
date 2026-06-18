@@ -1,0 +1,29 @@
+# Render Blueprint for Nsaano.
+#
+# This assumes Nsaano is the repository root (you pushed the contents of `nsaano/`
+# as their own repo). If instead Nsaano lives in a SUBFOLDER of a larger repo,
+# move this file to that repo's root and uncomment the `rootDir: nsaano` line.
+#
+# Deploy: Render dashboard → New → Blueprint → pick the repo. Then set the three
+# API keys (they're marked `sync: false`, so they are NOT committed — you enter them
+# in the dashboard). Keyless chat just shows "(no key)"; everything else works.
+
+services:
+  - type: web
+    name: nsaano
+    runtime: node
+    plan: free
+    # rootDir: nsaano          # uncomment if this file sits in a parent repo's root
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/models
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false

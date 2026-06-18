@@ -1,0 +1,18 @@
+{
+  "name": "nsaano",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Nsaano — a creative-content studio for Piqabu. A pluggable tool host with a live control panel and an AI chat console (Claude / OpenAI / Gemini).",
+  "scripts": {
+    "start": "node server/server.js",
+    "dev": "node --watch server/server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2"
+  }
+}

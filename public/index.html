@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Nsaano</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./css/tokens.css">
+  <link rel="stylesheet" href="./css/app.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/lottie-web/5.12.2/lottie.min.js"></script>
+</head>
+<body>
+  <div class="grid-bg"></div>
+
+  <!-- ── top bar ── -->
+  <header class="topbar">
+    <div class="topbar-left">
+      <span class="brand">Nsaano</span>
+      <div class="tool-switch-wrap">
+        <button id="tool-switch" class="tool-switch" type="button">
+          <span id="tool-name" class="tool-name">…</span>
+          <span class="chev">⌄</span>
+        </button>
+        <div id="tool-menu" class="tool-menu"></div>
+      </div>
+    </div>
+    <div class="topbar-right">
+      <button id="btn-export" class="btn-primary" type="button">Export</button>
+    </div>
+  </header>
+
+  <!-- ── 3-pane body ── -->
+  <main class="layout">
+    <!-- left: chat console -->
+    <aside class="pane pane--left">
+      <div class="pane-head">
+        <div id="comp-title" class="comp-title">…</div>
+        <div class="pane-label">✦ Chat Console</div>
+      </div>
+      <div id="chat" class="chat"></div>
+      <div class="pane-foot">AI can make mistakes. Always double-check the results.</div>
+    </aside>
+
+    <!-- center: stage -->
+    <section class="stage">
+      <div class="tool-canvas-area">
+        <canvas id="canvas"></canvas>
+      </div>
+      <div class="stage-bar">
+        <label class="stage-field"><span>W</span><input id="stage-w" type="number" min="1"></label>
+        <label class="stage-field"><span>H</span><input id="stage-h" type="number" min="1"></label>
+        <select id="stage-ratio" class="select select--bare" title="Aspect ratio"></select>
+      </div>
+    </section>
+
+    <!-- right: controllers -->
+    <aside class="pane pane--right">
+      <div class="pane-head pane-head--row">
+        <div class="pane-label">⚙ Edit Controllers</div>
+        <button id="btn-reset" class="btn-link" type="button">↺ Reset</button>
+      </div>
+      <div id="panel-body" class="panel-body"></div>
+    </aside>
+  </main>
+
+  <footer class="appfoot">
+    <span>Made for Piqabu</span>
+    <span class="appfoot-credit">Design sensibility · AhTohMoh</span>
+  </footer>
+
+  <script type="module" src="./js/app.js"></script>
+</body>
+</html>
