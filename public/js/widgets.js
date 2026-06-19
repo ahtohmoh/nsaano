@@ -14,7 +14,8 @@ export function el(tag, props = {}, children = []) {
   }
   for (const c of [].concat(children)) {
     if (c == null) continue;
-    node.appendChild(typeof c === 'string' ? document.createTextNode(c) : c);
+    const isText = typeof c === 'string' || typeof c === 'number';
+    node.appendChild(isText ? document.createTextNode(String(c)) : c);
   }
   return node;
 }

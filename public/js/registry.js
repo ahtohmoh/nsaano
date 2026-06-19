@@ -77,11 +77,24 @@ export function createRegistry({ canvas, ctx, runtime }) {
   }
 
   async function installFromSource(source, { activate: doActivate = true } = {}) {
-    const url = URL.createObjectURL(new Blob([source], { type: 'text/javascript' }));
+    const trimmed = String(source || '').trim();
+    // Friendly guards before we hand it to the module loader.
+    if (/^\s*<(?:!doctype|html|\?xml|svg)/i.test(trimmed)) {
+      throw new Error("That looks like HTML/SVG (an exported file), not a tool. A tool is a .js module ending in `export default { … }`.");
+    }
+    if (!/export\s+default/.test(trimmed)) {
+      throw new Error('No `export default` found. A Nsaano tool is a .js module that default-exports a Tool object.');
+    }
+    const url = URL.createObjectURL(new Blob([trimmed], { type: 'text/javascript' }));
     let mod;
-    try { mod = await import(/* @vite-ignore */ url); }
-    finally { URL.revokeObjectURL(url); }
-    const id = register(validateTool(mod.default), { source, builtin: false });
+    try {
+      mod = await import(/* @vite-ignore */ url);
+    } catch (e) {
+      throw new Error('That .js file has a syntax error and could not load: ' + (e && e.message ? e.message : e));
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+    const id = register(validateTool(mod.default), { source: trimmed, builtin: false });
     persistInstalled();
     if (doActivate) activate(id);
     return id;

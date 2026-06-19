@@ -5,7 +5,7 @@ import { createRuntime } from './runtime.js';
 import { createRegistry } from './registry.js';
 import { renderPanel } from './panel.js';
 import { initChat } from './chat.js';
-import { exportActiveTool } from './export.js';
+import { openExportModal } from './export.js';
 import { el } from './widgets.js';
 
 const canvas = document.getElementById('canvas');
@@ -82,8 +82,8 @@ function findRatioOptions(controls) {
 
 // ── header actions ──
 document.getElementById('btn-reset').addEventListener('click', () => registry.getActive().controls.reset());
-document.getElementById('btn-export').addEventListener('click', async () => {
-  try { await exportActiveTool(registry); } catch (e) { alert('Export failed: ' + e.message); }
+document.getElementById('btn-export').addEventListener('click', () => {
+  try { openExportModal(registry); } catch (e) { alert('Export failed: ' + e.message); }
 });
 
 // tool switcher menu
@@ -114,21 +114,29 @@ function buildToolMenu() {
 
 // ── install modal ──
 function openInstallModal() {
-  const ta = el('textarea', { class: 'modal-textarea', placeholder: 'Paste a tool module here (must export default a Tool object)…', rows: 12 });
+  const ta = el('textarea', { class: 'modal-textarea', placeholder: 'Paste a Nsaano tool module (.js) here — it must end with:  export default { id, name, controlSchema, defaults, init, draw }', rows: 12 });
   const fileBtn = el('button', { class: 'btn-ghost', type: 'button' }, 'Load .js file');
-  const fileInput = el('input', { type: 'file', accept: '.js,text/javascript', style: 'display:none' });
+  const fileInput = el('input', { type: 'file', accept: '.js,.mjs,text/javascript', style: 'display:none' });
   fileBtn.addEventListener('click', () => fileInput.click());
-  fileInput.addEventListener('change', () => { const f = fileInput.files[0]; if (f) f.text().then((t) => { ta.value = t; }); });
 
+  const hint = el('p', { class: 'modal-hint' }, 'A tool is a JavaScript module — not an exported PNG/MP4/HTML (those are outputs, not tools). Use “Remix current tool” to start from this one.');
+  const err = el('p', { class: 'modal-err' });
   const warn = el('p', { class: 'modal-warn' }, '⚠ Installing a tool runs its code in this page. Only install code you trust.');
   const cancel = el('button', { class: 'btn-ghost', type: 'button' }, 'Cancel');
   const confirm = el('button', { class: 'btn-primary', type: 'button' }, 'Install & run');
+
+  fileInput.addEventListener('change', () => {
+    const f = fileInput.files[0]; if (!f) return;
+    if (!/\.(js|mjs)$/i.test(f.name)) { err.textContent = `“${f.name}” isn't a .js module. Pick a tool .js file.`; return; }
+    err.textContent = '';
+    f.text().then((t) => { ta.value = t; });
+  });
 
   const modal = el('div', { class: 'modal-backdrop' }, [
     el('div', { class: 'modal' }, [
       el('div', { class: 'modal-head' }, 'Install a tool'),
       el('div', { class: 'modal-row' }, [fileBtn, fileInput]),
-      ta, warn,
+      ta, hint, err, warn,
       el('div', { class: 'modal-foot' }, [cancel, confirm])
     ])
   ]);
@@ -137,10 +145,11 @@ function openInstallModal() {
   modal.addEventListener('click', (e) => { if (e.target === modal) close(); });
   confirm.addEventListener('click', async () => {
     const src = ta.value.trim();
-    if (!src) return;
+    if (!src) { err.textContent = 'Paste a tool module first.'; return; }
+    err.textContent = '';
     confirm.disabled = true; confirm.textContent = 'Installing…';
     try { await registry.installFromSource(src); close(); }
-    catch (e) { warn.textContent = 'Install failed: ' + e.message; confirm.disabled = false; confirm.textContent = 'Install & run'; }
+    catch (e) { err.textContent = e.message; confirm.disabled = false; confirm.textContent = 'Install & run'; }
   });
   document.body.appendChild(modal);
   ta.focus();
