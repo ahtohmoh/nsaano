@@ -45,6 +45,12 @@ function getFontStylePrefix(style) {
 
 const HANDLE_SIZE = 14;
 
+// Time source: prefer the studio clock (set by app.js) so the video exporter can step
+// frames at exact times; fall back to performance.now() (e.g. in the standalone export,
+// where the global is absent) so the animation still runs in real time.
+function clockNow() { const c = (typeof window !== 'undefined') && window.__nsaanoClock; return c ? c.now() : performance.now(); }
+function clockManual() { const c = (typeof window !== 'undefined') && window.__nsaanoClock; return !!(c && c.isManual()); }
+
 // ─── control schema (drives panel UI, AI tool spec, and export) ──────────────
 const controlSchema = [
   { title: 'Mode & Layout', fields: [
@@ -281,10 +287,10 @@ export default {
 
     // ── reset / replay ──
     function reset() {
-      typingIndex = 0; typedChars = []; nextTypeTime = performance.now(); resetScheduled = false;
-      revealedFrames = []; galleryRevealIndex = 0; nextRevealTime = performance.now();
+      typingIndex = 0; typedChars = []; nextTypeTime = clockNow(); resetScheduled = false;
+      revealedFrames = []; galleryRevealIndex = 0; nextRevealTime = clockNow();
       overlayItems.forEach((item) => {
-        if (item.kind === 'text' && item.textType === 'Animated (Typing)') { item.typingIndex = 0; item.nextTypeTime = performance.now(); }
+        if (item.kind === 'text' && item.textType === 'Animated (Typing)') { item.typingIndex = 0; item.nextTypeTime = clockNow(); }
       });
     }
     unsubs.push(controls.onAction('reset', reset));
@@ -353,7 +359,7 @@ export default {
         x: it.x, y: it.y, w: it.w, h: it.h, textType: it.textType || 'Static', casing: it.casing || 'Original',
         style: it.style || 'Normal', underline: !!it.underline, cpm: it.cpm || 500,
         typingIndex: typeof it.typingIndex === 'number' ? it.typingIndex : (it.text ? it.text.length : 0),
-        nextTypeTime: performance.now()
+        nextTypeTime: clockNow()
       }));
       overlayLibrary.forEach((a) => loadAsset(a.id, a.url, a.kind));
     }
@@ -407,7 +413,7 @@ export default {
         color: controls.get('textOverlayColor') || '#FFFFFF', fontSize: 32,
         casing: controls.get('textOverlayCase') || 'Original', style: controls.get('textOverlayStyle') || 'Normal',
         underline: controls.get('textOverlayUnderline') || false, cpm: controls.get('textOverlayCpm') || 500,
-        typingIndex: textType === 'Animated (Typing)' ? 0 : textVal.length, nextTypeTime: performance.now(),
+        typingIndex: textType === 'Animated (Typing)' ? 0 : textVal.length, nextTypeTime: clockNow(),
         x: cw / 2 - 100 + (Math.random() - 0.5) * 80, y: ch / 2 - 20 + (Math.random() - 0.5) * 80, w: 200, h: 40
       });
       persistOverlays();
@@ -936,7 +942,7 @@ export default {
         drawInnerGlow(ctx, canvas.width, canvas.height, controls.get('canvasGlowColor') || '#007AFF', controls.get('canvasGlowIntensity') || 40, pulse);
       }
 
-      if (mode === 'Keyboard' && typingIndex >= text.length && typedChars.length === 0 && text.length > 0 && !resetScheduled) {
+      if (mode === 'Keyboard' && typingIndex >= text.length && typedChars.length === 0 && text.length > 0 && !resetScheduled && !clockManual()) {
         resetScheduled = true; setTimeout(reset, 1000);
       }
     };

@@ -13,10 +13,21 @@ const ctx = canvas.getContext('2d');
 const runtime = createRuntime(canvas);
 const registry = createRegistry({ canvas, ctx, runtime });
 
-// ── RAF loop (always draws whatever tool is active) ──
+// ── injectable clock ──
+// Tools read time from this global (defensively, falling back to performance.now —
+// so the standalone Code export, where it's absent, still animates in real time).
+// The studio video exporter switches it to "manual" mode to step frames at exact
+// times, and the RAF loop below pauses while that's happening.
+window.__nsaanoClock = window.__nsaanoClock || {
+  manual: null,
+  now() { return this.manual == null ? performance.now() : this.manual; },
+  isManual() { return this.manual != null; }
+};
+
+// ── RAF loop (draws whatever tool is active; pauses during manual/offline render) ──
 let active = null;
 function loop(t) {
-  if (active && active.def && typeof active.def.draw === 'function') {
+  if (!window.__nsaanoClock.isManual() && active && active.def && typeof active.def.draw === 'function') {
     try { active.def.draw(t); } catch (e) { console.error('draw error', e); }
   }
   requestAnimationFrame(loop);

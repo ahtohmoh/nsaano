@@ -112,6 +112,89 @@ async function recordVideo(registry, { format, fps, durationSec, quality, onProg
   return { blob, format: actualFormat, fellBack: actualFormat !== format };
 }
 
+// ─── studio video (deterministic frames + WebCodecs H.264 + mp4-muxer) ─────────
+// Renders every frame at an exact time (t = i/fps) instead of capturing in real time,
+// then encodes each frame with the platform's hardware H.264 encoder (WebCodecs
+// VideoEncoder) at a fixed bitrate and muxes to MP4 — frame-perfect, no dropped frames,
+// no encoder variance, no big download. Needs WebCodecs (Chrome/Edge/Brave/Safari 16.4+).
+const STUDIO_MAX_FRAMES = 1200;
+// studio bitrate is generous (bits per pixel per frame) for broadcast-grade output
+const STUDIO_BPP = { Low: 0.06, Standard: 0.10, Medium: 0.16, High: 0.24 };
+
+export function studioSupported() { return !!(typeof window !== 'undefined' && window.__nsaanoClock && window.VideoEncoder && window.VideoFrame); }
+
+async function pickH264Codec(width, height, bitrate, framerate) {
+  // try High → Main → Baseline at a permissive level until the platform accepts one
+  for (const codec of ['avc1.640033', 'avc1.4D4033', 'avc1.42E033', 'avc1.42E01E']) {
+    for (const extra of [{ bitrateMode: 'constant' }, {}]) {
+      try {
+        const cfg = { codec, width, height, bitrate, framerate, ...extra };
+        const s = await VideoEncoder.isConfigSupported(cfg);
+        if (s && s.supported) return cfg;
+      } catch (_) { /* try next */ }
+    }
+  }
+  return null;
+}
+
+async function renderStudioVideo(registry, { fps, durationSec, quality, onProgress, onStatus }) {
+  if (!studioSupported()) throw new Error('Frame-perfect export needs WebCodecs (Chrome, Edge, Brave, or Safari 16.4+).');
+  if (onStatus) onStatus('Preparing encoder…');
+  const { Muxer, ArrayBufferTarget } = await import('https://cdn.jsdelivr.net/npm/mp4-muxer@5.2.1/+esm');
+
+  const canvas = canvasEl();
+  const { def, controls } = registry.getActive();
+  const clock = window.__nsaanoClock;
+  const W = canvas.width, H = canvas.height;
+
+  let frames = Math.round(durationSec * fps);
+  const clamped = frames > STUDIO_MAX_FRAMES;
+  if (clamped) frames = STUDIO_MAX_FRAMES;
+
+  const bitrate = Math.max(1_000_000, Math.min(60_000_000, Math.round(W * H * fps * (STUDIO_BPP[quality] ?? STUDIO_BPP.High))));
+  const config = await pickH264Codec(W, H, bitrate, fps);
+  if (!config) throw new Error('No H.264 encoder configuration is supported for this canvas size.');
+
+  const muxer = new Muxer({ target: new ArrayBufferTarget(), video: { codec: 'avc', width: W, height: H }, fastStart: 'in-memory' });
+  let encodeError = null;
+  const encoder = new VideoEncoder({
+    output: (chunk, meta) => muxer.addVideoChunk(chunk, meta),
+    error: (e) => { encodeError = e; }
+  });
+  encoder.configure(config);
+
+  if (onStatus) onStatus('Rendering frames…');
+  controls.set('playing', true);
+  clock.manual = 0;
+  controls.triggerAction('reset'); // reset() reads clockNow() === 0
+  const gop = Math.max(1, Math.round(fps * 2)); // keyframe every ~2s
+  try {
+    for (let i = 0; i < frames; i++) {
+      if (encodeError) throw encodeError;
+      const t = (i / fps) * 1000;
+      clock.manual = t;
+      try { def.draw(t); } catch (e) { console.error(e); }
+      const frame = new VideoFrame(canvas, { timestamp: Math.round((i * 1e6) / fps), duration: Math.round(1e6 / fps) });
+      encoder.encode(frame, { keyFrame: i % gop === 0 });
+      frame.close();
+      if (onProgress) onProgress(0.92 * ((i + 1) / frames));
+      if (encoder.encodeQueueSize > 8) await new Promise((r) => setTimeout(r)); // backpressure
+    }
+  } finally {
+    clock.manual = null; // resume the live RAF loop no matter what
+  }
+
+  if (onStatus) onStatus('Finalizing MP4…');
+  await encoder.flush();
+  if (encodeError) throw encodeError;
+  muxer.finalize();
+  if (onProgress) onProgress(1);
+
+  const blob = new Blob([muxer.target.buffer], { type: 'video/mp4' });
+  if (!blob.size) throw new Error('Encoding produced no data.');
+  return { blob, frames, clamped };
+}
+
 // ─── standalone HTML (Code tab) ────────────────────────────────────────────────
 async function fetchText(url) { const r = await fetch(url); if (!r.ok) throw new Error('Failed to fetch ' + url); return r.text(); }
 
@@ -192,7 +275,8 @@ export function openExportModal(registry) {
   const canvas = canvasEl();
   const baseW = canvas.width, baseH = canvas.height;
 
-  const state = { format: 'png', scale: 2, transparent: false, jpegQuality: 'High', fps: 30, duration: 4, videoQuality: 'High', busy: false };
+  const studioAvailable = studioSupported();
+  const state = { format: 'png', scale: 2, transparent: false, jpegQuality: 'High', fps: 30, duration: 4, videoQuality: 'High', studio: studioAvailable, busy: false };
 
   const main = el('div', { class: 'export-main' });
   const footer = el('div', { class: 'export-footer' });
@@ -276,34 +360,74 @@ export function openExportModal(registry) {
     qSel.addEventListener('change', () => { state.videoQuality = qSel.value; updateVideoFooter(); });
     main.appendChild(el('div', { class: 'export-row' }, [field('FPS', fpsSel), field('Quality', qSel)]));
 
-    if (!pickMime('mp4') && state.format === 'mp4') {
-      main.appendChild(el('div', { class: 'export-note' }, 'This browser has no native MP4 recorder — it will export an equivalent WebM instead.'));
+    // Studio (frame-perfect WebCodecs H.264) — MP4 only.
+    const note = el('div', { class: 'export-note' });
+    if (state.format === 'mp4' && studioAvailable) {
+      const sw = el('button', { class: 'toggle' + (state.studio ? ' is-on' : ''), type: 'button' }, el('span', { class: 'toggle-knob' }));
+      sw.addEventListener('click', () => { state.studio = !state.studio; sw.classList.toggle('is-on', state.studio); refreshNote(); updateVideoFooter(); });
+      main.appendChild(el('div', { class: 'export-card' }, [
+        el('div', {}, [el('div', { class: 'export-card-title' }, 'Studio encode (frame-perfect)'), el('div', { class: 'export-card-sub' }, 'Renders every frame and encodes H.264 via WebCodecs — exact frames, no encoder variance')]),
+        sw
+      ]));
     }
+    function refreshNote() {
+      if (state.format === 'mp4' && state.studio) note.textContent = `Frame-perfect H.264 via your GPU encoder (WebCodecs) — no download. Up to ${STUDIO_MAX_FRAMES} frames.`;
+      else if (!pickMime('mp4') && state.format === 'mp4') note.textContent = 'This browser has no native MP4 recorder — it will export an equivalent WebM instead.';
+      else note.textContent = '';
+    }
+    refreshNote();
+    main.appendChild(note);
 
-    const btn = el('button', { class: 'btn-primary export-action', type: 'button' }, `Record ${FORMATS[state.format].label}`);
+    const isStudio = () => state.format === 'mp4' && state.studio && studioAvailable;
+    const label = () => isStudio() ? 'Render MP4 (Studio)' : `Record ${FORMATS[state.format].label}`;
+    const btn = el('button', { class: 'btn-primary export-action', type: 'button' }, label());
+    const status = el('div', { class: 'export-note export-status' });
     const prog = el('div', { class: 'export-progress' });
     btn.addEventListener('click', async () => {
-      if (state.busy) return; state.busy = true; btn.disabled = true; btn.textContent = 'Recording…';
+      if (state.busy) return; state.busy = true; btn.disabled = true;
+      status.textContent = ''; main.querySelectorAll('.export-note--err').forEach((n) => n.remove());
       try {
-        const { blob, format, fellBack } = await recordVideo(registry, {
-          format: state.format, fps: state.fps, durationSec: state.duration, quality: state.videoQuality,
-          onProgress: (p) => { prog.style.width = Math.round(p * 100) + '%'; }
-        });
-        downloadBlob(blob, `nsaano-${Date.now()}.${format}`);
-        btn.textContent = fellBack ? 'Saved as WebM ✓' : 'Done ✓';
+        if (isStudio()) {
+          btn.textContent = 'Rendering…';
+          const { blob, frames, clamped } = await renderStudioVideo(registry, {
+            fps: state.fps, durationSec: state.duration, quality: state.videoQuality,
+            onProgress: (p) => { prog.style.width = Math.round(p * 100) + '%'; },
+            onStatus: (s) => { status.textContent = s; }
+          });
+          downloadBlob(blob, `nsaano-${Date.now()}.mp4`);
+          status.textContent = `Encoded ${frames} frames${clamped ? ` (clamped to ${STUDIO_MAX_FRAMES})` : ''} · ${fmtBytes(blob.size)}`;
+          btn.textContent = 'Done ✓';
+        } else {
+          btn.textContent = 'Recording…';
+          const { blob, format, fellBack } = await recordVideo(registry, {
+            format: state.format, fps: state.fps, durationSec: state.duration, quality: state.videoQuality,
+            onProgress: (p) => { prog.style.width = Math.round(p * 100) + '%'; }
+          });
+          downloadBlob(blob, `nsaano-${Date.now()}.${format}`);
+          btn.textContent = fellBack ? 'Saved as WebM ✓' : 'Done ✓';
+        }
       } catch (e) {
-        btn.textContent = 'Failed';
+        btn.textContent = 'Failed'; status.textContent = '';
         main.appendChild(el('div', { class: 'export-note export-note--err' }, e.message));
       } finally {
         state.busy = false; btn.disabled = false;
-        setTimeout(() => { btn.textContent = `Record ${FORMATS[state.format].label}`; prog.style.width = '0%'; }, 1800);
+        setTimeout(() => { btn.textContent = label(); prog.style.width = '0%'; }, 2000);
       }
     });
     main.appendChild(btn);
     main.appendChild(el('div', { class: 'export-progress-track' }, prog));
+    main.appendChild(status);
     updateVideoFooter();
   }
   function updateVideoFooter() {
+    const studio = state.format === 'mp4' && state.studio && studioAvailable;
+    if (studio) {
+      const n = Math.min(STUDIO_MAX_FRAMES, Math.round(state.duration * state.fps));
+      const bps = Math.round(baseW * baseH * state.fps * (STUDIO_BPP[state.videoQuality] ?? STUDIO_BPP.High));
+      const mbps = (Math.max(1_000_000, Math.min(60_000_000, bps)) / 1_000_000).toFixed(1);
+      setFooter(`${baseW} × ${baseH} · ${ratioLabel(baseW, baseH)} · ${n} frames @ ${state.fps} FPS · H.264 ${mbps} Mbps · STUDIO`);
+      return;
+    }
     const bps = computeBitrate(baseW, baseH, state.fps, state.videoQuality);
     const sizeBytes = (bps / 8) * state.duration;
     setFooter(`${baseW} × ${baseH} · ${ratioLabel(baseW, baseH)} · ${state.duration}s @ ${state.fps} FPS · ~${fmtBytes(sizeBytes)} · ${FORMATS[state.format].label.toUpperCase()}`);
