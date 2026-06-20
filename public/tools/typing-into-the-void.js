@@ -1084,7 +1084,34 @@ export default {
   },
 
   draw(timestamp) { if (this._draw) this._draw(timestamp); },
-  dispose() { if (this._dispose) this._dispose(); }
+  dispose() { if (this._dispose) this._dispose(); },
+
+  // Natural length of one full play-through (seconds), computed from the current controls —
+  // the export modal uses this for "Auto" duration. Keyboard: time to type the whole message
+  // + the fade tail + the end pause. Gallery: time to reveal every cell + persistence.
+  getNaturalDuration(controls) {
+    const mode = controls.get('displayMode') || 'Keyboard';
+    if (mode === 'Gallery') {
+      const cols = Math.max(1, Math.floor(controls.get('galleryCols') || 6));
+      const rows = Math.max(1, Math.floor(controls.get('galleryRows') || 4));
+      const revealMs = (60 / (controls.get('galleryRevealSpeed') || 600)) * 1000;
+      const persistMs = (controls.get('galleryPersistence') || 4) * 1000;
+      return Math.max(1, (cols * rows * revealMs + persistMs) / 1000);
+    }
+    const perChar = (cpm) => Math.max(30, (60 / (cpm || 500)) * 1000);
+    const cased = applyCasing(controls.get('text') || '', controls.get('textCase') || 'Original');
+    let typeMs = cased.length * perChar(controls.get('cpm'));
+    const ov = controls.get('overlayState');
+    if (ov && Array.isArray(ov.items)) {
+      ov.items.forEach((it) => {
+        if (it.kind === 'text' && it.textType === 'Animated (Typing)') {
+          typeMs = Math.max(typeMs, applyCasing(it.text || '', it.casing).length * perChar(it.cpm));
+        }
+      });
+    }
+    const tailMs = (controls.get('persistence') || 1) * 1000 + 1000; // fade-out + end pause before the loop
+    return Math.max(1, (typeMs + tailMs) / 1000);
+  }
 };
 
 // Skins extracted to keep init() readable. Ported 1:1 from the reference.

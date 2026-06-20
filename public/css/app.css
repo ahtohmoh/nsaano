@@ -239,6 +239,9 @@
 .export-title { font-size: 17px; font-weight: 500; }
 .export-blurb { font-size: 12.5px; color: var(--text-dim); line-height: 1.5; }
 .export-field { display: flex; flex-direction: column; gap: 8px; }
+.export-field-head { display: flex; align-items: center; justify-content: space-between; }
+.export-auto { display: flex; align-items: center; gap: 8px; }
+.export-auto-label { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-faint); }
 .export-row { display: flex; gap: 16px; }
 .export-row .export-field { flex: 1; }
 .export-label { font-size: var(--label); letter-spacing: var(--tracking); text-transform: uppercase; color: var(--text-faint); }

@@ -276,7 +276,9 @@ export function openExportModal(registry) {
   const baseW = canvas.width, baseH = canvas.height;
 
   const studioAvailable = studioSupported();
-  const state = { format: 'png', scale: 2, transparent: false, jpegQuality: 'High', fps: 30, duration: 4, videoQuality: 'High', studio: studioAvailable, busy: false };
+  const state = { format: 'png', scale: 2, transparent: false, jpegQuality: 'High', fps: 30, duration: 4, autoDuration: true, naturalDuration: 0, videoQuality: 'High', studio: studioAvailable, busy: false };
+  // effective recording length: the tool's natural length in Auto mode, else the manual value
+  const effDuration = () => (state.autoDuration ? (state.naturalDuration || state.duration) : state.duration);
 
   const main = el('div', { class: 'export-main' });
   const footer = el('div', { class: 'export-footer' });
@@ -344,10 +346,28 @@ export function openExportModal(registry) {
   }
 
   function renderVideo() {
-    const dur = el('input', { type: 'range', class: 'slider-range', min: 1, max: 20, step: 1, value: state.duration });
-    const durVal = el('span', { class: 'export-readout' }, state.duration + 's');
-    dur.addEventListener('input', () => { state.duration = Number(dur.value); durVal.textContent = state.duration + 's'; updateVideoFooter(); });
-    main.appendChild(field('Duration', el('div', { class: 'slider' }, [dur, durVal])));
+    // Auto-detect the animation's natural length from the active tool.
+    const natural = Math.max(1, Math.round((registry.getActive().def.getNaturalDuration && registry.getActive().def.getNaturalDuration(registry.getActive().controls)) || state.duration));
+    state.naturalDuration = natural;
+
+    const dur = el('input', { type: 'range', class: 'slider-range', min: 1, max: Math.max(20, natural), step: 1 });
+    const durVal = el('span', { class: 'export-readout' });
+    const autoSw = el('button', { class: 'toggle' + (state.autoDuration ? ' is-on' : ''), type: 'button', title: 'Match the animation length automatically' }, el('span', { class: 'toggle-knob' }));
+    function syncDur() {
+      dur.disabled = state.autoDuration;
+      dur.value = state.autoDuration ? natural : state.duration;
+      durVal.textContent = state.autoDuration ? `${natural}s · auto` : `${state.duration}s`;
+    }
+    autoSw.addEventListener('click', () => { state.autoDuration = !state.autoDuration; autoSw.classList.toggle('is-on', state.autoDuration); syncDur(); updateVideoFooter(); });
+    dur.addEventListener('input', () => { if (state.autoDuration) return; state.duration = Number(dur.value); durVal.textContent = `${state.duration}s`; updateVideoFooter(); });
+    syncDur();
+    main.appendChild(el('div', { class: 'export-field' }, [
+      el('div', { class: 'export-field-head' }, [
+        el('label', { class: 'export-label' }, 'Duration'),
+        el('div', { class: 'export-auto' }, [el('span', { class: 'export-auto-label' }, 'Auto'), autoSw])
+      ]),
+      el('div', { class: 'slider' }, [dur, durVal])
+    ]));
 
     const fpsSel = el('select', { class: 'select' });
     [24, 30, 60].forEach((f) => fpsSel.appendChild(el('option', { value: f }, f)));
@@ -390,7 +410,7 @@ export function openExportModal(registry) {
         if (isStudio()) {
           btn.textContent = 'Rendering…';
           const { blob, frames, clamped } = await renderStudioVideo(registry, {
-            fps: state.fps, durationSec: state.duration, quality: state.videoQuality,
+            fps: state.fps, durationSec: effDuration(), quality: state.videoQuality,
             onProgress: (p) => { prog.style.width = Math.round(p * 100) + '%'; },
             onStatus: (s) => { status.textContent = s; }
           });
@@ -400,7 +420,7 @@ export function openExportModal(registry) {
         } else {
           btn.textContent = 'Recording…';
           const { blob, format, fellBack } = await recordVideo(registry, {
-            format: state.format, fps: state.fps, durationSec: state.duration, quality: state.videoQuality,
+            format: state.format, fps: state.fps, durationSec: effDuration(), quality: state.videoQuality,
             onProgress: (p) => { prog.style.width = Math.round(p * 100) + '%'; }
           });
           downloadBlob(blob, `nsaano-${Date.now()}.${format}`);
@@ -420,17 +440,18 @@ export function openExportModal(registry) {
     updateVideoFooter();
   }
   function updateVideoFooter() {
+    const d = effDuration();
     const studio = state.format === 'mp4' && state.studio && studioAvailable;
     if (studio) {
-      const n = Math.min(STUDIO_MAX_FRAMES, Math.round(state.duration * state.fps));
+      const n = Math.min(STUDIO_MAX_FRAMES, Math.round(d * state.fps));
       const bps = Math.round(baseW * baseH * state.fps * (STUDIO_BPP[state.videoQuality] ?? STUDIO_BPP.High));
       const mbps = (Math.max(1_000_000, Math.min(60_000_000, bps)) / 1_000_000).toFixed(1);
       setFooter(`${baseW} × ${baseH} · ${ratioLabel(baseW, baseH)} · ${n} frames @ ${state.fps} FPS · H.264 ${mbps} Mbps · STUDIO`);
       return;
     }
     const bps = computeBitrate(baseW, baseH, state.fps, state.videoQuality);
-    const sizeBytes = (bps / 8) * state.duration;
-    setFooter(`${baseW} × ${baseH} · ${ratioLabel(baseW, baseH)} · ${state.duration}s @ ${state.fps} FPS · ~${fmtBytes(sizeBytes)} · ${FORMATS[state.format].label.toUpperCase()}`);
+    const sizeBytes = (bps / 8) * d;
+    setFooter(`${baseW} × ${baseH} · ${ratioLabel(baseW, baseH)} · ${d}s @ ${state.fps} FPS · ~${fmtBytes(sizeBytes)} · ${FORMATS[state.format].label.toUpperCase()}`);
   }
 
   function renderCode() {
