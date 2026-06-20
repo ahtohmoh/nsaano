@@ -4,7 +4,6 @@
 import { createRuntime } from './runtime.js';
 import { createRegistry } from './registry.js';
 import { renderPanel } from './panel.js';
-import { initChat } from './chat.js';
 import { openExportModal } from './export.js';
 import { el } from './widgets.js';
 
@@ -43,7 +42,6 @@ let stageTeardown = null;
 function onToolChange(a) {
   active = a;
   toolNameEl.textContent = a.def.name;
-  document.getElementById('comp-title').textContent = a.def.name;
   if (panelTeardown) panelTeardown();
   panelTeardown = renderPanel(panelHost, a.def, a.controls);
   if (stageTeardown) stageTeardown();
@@ -165,9 +163,6 @@ function openInstallModal() {
   document.body.appendChild(modal);
   ta.focus();
 }
-
-// ── chat ──
-initChat({ root: document.getElementById('chat'), registry });
 
 // ── go ──
 registry.init().catch((e) => { console.error(e); alert('Failed to start Nsaano: ' + e.message); });

@@ -3,36 +3,37 @@
 A creative-content studio for **Piqabu** — built in the Piqabu / AhTohMoh visual language.
 
 Nsaano is a *shell* that hosts **tools**. Each tool is a small canvas engine with its own controls.
-You drive a tool three ways:
+You drive a tool two ways:
 
 1. **The control panel** ("Edit Controllers") — every knob, live, re-renders instantly.
-2. **The Chat Console** — talk to **Claude / OpenAI / Gemini**; the model edits your controls and
-   writes Piqabu copy for you.
-3. **Direct manipulation** — drag text and overlays right on the canvas.
+2. **Direct manipulation** — drag text and overlays right on the canvas. **Alignment guides** snap
+   them to the centre and edges, and you can **double-click a text overlay to edit it in place**.
+   Select an item and use the **Align** buttons (left / centre / right / top / middle / bottom).
 
 You can **install** new tools, **switch** between them, **remix** them, and **export** any composition
-as a standalone HTML file (which is itself re-importable as a tool).
+as an image (PNG/JPEG), video (MP4/WebM, with a frame-perfect "studio" H.264 encoder), or a
+standalone, re-importable HTML file.
 
 The first built-in tool is **Typing Into The Void** — a faithful recreation of the keyboard-typing
 animation engine.
+
+> A `/api/chat` proxy for Claude / OpenAI / Gemini still ships in `server/` (keys via `.env`), but the
+> in-app chat console has been removed — the studio is driven entirely by the panel and the canvas.
 
 ---
 
 ## Run it
 
-Requires Node 18+ (uses native `fetch`).
+Requires Node 18+.
 
 ```bash
 cd nsaano
 npm install
-cp .env.example .env      # then add whichever model keys you have
 npm start
 ```
 
-Open <http://localhost:3000>.
-
-The Chat Console works for whichever providers have a key in `.env`. The control panel, canvas, drag
-editing, and export all work with **no keys at all** — keys are only needed for the AI features.
+Open <http://localhost:3000>. No keys or config are needed — the whole studio (panel, canvas, drag
+editing, alignment, and export) runs without them.
 
 ## Deploy to Render
 

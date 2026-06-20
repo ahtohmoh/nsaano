@@ -238,6 +238,22 @@ function buildAction(field, controls) {
   return { node: row(null, btn), sync: () => {} };
 }
 
+// A compact grid of small action buttons (e.g. alignment).
+function buildActions(field, controls) {
+  const grid = el('div', { class: 'actionbar' });
+  (field.items || []).forEach((it) => {
+    const b = el('button', { class: 'actionbar-btn', type: 'button', title: it.title || it.label }, it.label);
+    b.addEventListener('click', () => controls.triggerAction(it.action));
+    grid.appendChild(b);
+  });
+  return { node: row(field.label, grid, { stack: true }), sync: () => {} };
+}
+
+// Static helper text inside the panel.
+function buildNote(field) {
+  return { node: el('p', { class: 'field-note' }, field.text || ''), sync: () => {} };
+}
+
 const BUILDERS = {
   segmented: buildSegmented,
   select: buildSelect,
@@ -250,7 +266,9 @@ const BUILDERS = {
   image: buildImage,
   images: buildImages,
   font: buildFont,
-  action: buildAction
+  action: buildAction,
+  actions: buildActions,
+  note: buildNote
 };
 
 /**

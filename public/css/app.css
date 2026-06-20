@@ -70,7 +70,7 @@
 .layout {
   position: relative; z-index: 1;
   height: calc(100vh - var(--topbar-h) - var(--foot-h));
-  display: grid; grid-template-columns: var(--pane-w) 1fr var(--pane-w);
+  display: grid; grid-template-columns: 1fr var(--pane-w);
 }
 .pane { display: flex; flex-direction: column; min-height: 0; background: var(--pane); }
 .pane--left { border-right: 1px solid var(--line); }
@@ -200,6 +200,13 @@
 .thumb-x { position: absolute; top: -6px; right: -6px; width: 16px; height: 16px; border-radius: 50%; background: #000; color: #fff; border: 1px solid var(--line-strong); font-size: 11px; line-height: 1; cursor: pointer; }
 
 .btn-action { width: 100%; }
+
+/* compact alignment button grid */
+.actionbar { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.actionbar-btn { background: var(--field); border: 1px solid var(--line); border-radius: var(--radius-sm); color: var(--text-dim); font: inherit; font-size: 11px; padding: 7px 4px; cursor: pointer; transition: border-color 0.2s var(--ease), color 0.2s var(--ease); }
+.actionbar-btn:hover { border-color: var(--line-strong); color: var(--text); }
+.actionbar-btn:active { background: #fff; color: #0a0a0a; }
+.field-note { font-size: 11px; line-height: 1.5; color: var(--text-faint); margin: 2px 0; }
 
 /* ── modal ── */
 .modal-backdrop { position: fixed; inset: 0; z-index: 50; background: rgba(0,0,0,0.6); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; padding: 24px; }

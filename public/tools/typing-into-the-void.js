@@ -110,7 +110,13 @@ const controlSchema = [
     { key: 'lottieUrl', type: 'text', label: 'Media URL', placeholder: 'image / video / lottie url' },
     { type: 'action', label: 'Add Media By URL', action: 'addLottieUrl' },
     { key: 'overlayAssets', type: 'images', label: 'Upload Overlay Media' },
-    { type: 'action', label: 'Clear Overlays', action: 'clearOverlays' }
+    { type: 'action', label: 'Clear Overlays', action: 'clearOverlays' },
+    { key: 'snapEnabled', type: 'toggle', label: 'Snap & Guides' },
+    { type: 'note', text: 'Drag text on the canvas to position it — guides snap to center & edges. Double-click a text overlay to edit it. Select one, then align:' },
+    { type: 'actions', label: 'Align Selected', items: [
+      { label: 'Left', action: 'alignLeft' }, { label: 'Center H', action: 'alignCenterH' }, { label: 'Right', action: 'alignRight' },
+      { label: 'Top', action: 'alignTop' }, { label: 'Middle V', action: 'alignCenterV' }, { label: 'Bottom', action: 'alignBottom' }
+    ] }
   ] },
   { title: 'Gallery', fields: [
     { key: 'galleryImages', type: 'images', label: 'Gallery Media' },
@@ -173,7 +179,7 @@ const defaults = {
   useBgVideo: false, bgVideoUrl: '',
   canvasGlowActive: true, canvasGlowColor: '#FFFFFF', canvasGlowIntensity: 60, canvasGlowPulseSpeed: 1.2,
   randomKeyColors: false, paletteA: '#FF3B30', paletteB: '#FFCC00', paletteC: '#34C759', paletteD: '#007AFF', paletteE: '#AF52DE',
-  playing: true,
+  playing: true, snapEnabled: true,
   bgMode: 'Solid', bgColor: '#000000', bgImage: '', bgFit: 'cover',
   // seeded composition: one hashtag overlay, no heavy embedded media
   overlayState: { version: 3, items: [
@@ -220,6 +226,8 @@ export default {
     let draggingOverlay = null;
     let hoveringOverlayId = null;
     let selectedOverlayId = null;
+    let editingOverlayId = null;
+    let activeGuides = [];
     let lottieHostContainer = null;
 
     let bgVideoEl = null;
@@ -727,8 +735,8 @@ export default {
           c.textAlign = 'left'; c.textBaseline = 'top';
           const fullText = applyCasing(item.text, item.casing);
           const displayText = item.textType === 'Animated (Typing)' ? fullText.substring(0, item.typingIndex) : fullText;
-          c.fillText(displayText, item.x, item.y);
-          if (item.underline) drawUnderline(c, displayText, item.x, item.y, item.fontSize || 24, 'left', 'top');
+          if (item.id !== editingOverlayId) c.fillText(displayText, item.x, item.y); // hidden while its inline editor is open
+          if (item.underline && item.id !== editingOverlayId) drawUnderline(c, displayText, item.x, item.y, item.fontSize || 24, 'left', 'top');
           const metrics = c.measureText(displayText || 'M');
           item.w = Math.max(metrics.width, 20); item.h = (item.fontSize || 24) * 1.2;
           c.restore();
@@ -810,13 +818,123 @@ export default {
       return pointInRect(pos, item.x + item.w - HANDLE_SIZE / 2, item.y + item.h - HANDLE_SIZE / 2, HANDLE_SIZE, HANDLE_SIZE);
     }
 
+    // ── alignment: snapping + guides ──
+    function snapTargets(W, H) {
+      const margin = Math.round(Math.min(W, H) * 0.05);
+      return { x: [0, margin, W / 2, W - margin, W], y: [0, margin, H / 2, H - margin, H], thr: Math.max(6, Math.round(Math.min(W, H) * 0.013)) };
+    }
+    // Snap a box (top-left x,y,w,h); returns snapped {x,y} and the guide lines to draw.
+    function snapBox(x, y, w, h) {
+      if (!controls.get('snapEnabled')) return { x, y, guides: [] };
+      const W = canvas.width, H = canvas.height; const T = snapTargets(W, H); const guides = [];
+      const axis = (val, offsets, targets) => {
+        let best = null;
+        for (const t of targets) for (const off of offsets) { const d = Math.abs((val + off) - t); if (d < T.thr && (!best || d < best.d)) best = { d, snapped: t - off, guide: t }; }
+        return best;
+      };
+      const bx = axis(x, [0, w / 2, w], T.x); let nx = x; if (bx) { nx = bx.snapped; guides.push({ axis: 'x', pos: bx.guide }); }
+      const by = axis(y, [0, h / 2, h], T.y); let ny = y; if (by) { ny = by.snapped; guides.push({ axis: 'y', pos: by.guide }); }
+      return { x: nx, y: ny, guides };
+    }
+    // Snap a centre point (for the centred text line).
+    function snapCenter(cx, cy) {
+      if (!controls.get('snapEnabled')) return { x: cx, y: cy, guides: [] };
+      const W = canvas.width, H = canvas.height; const T = snapTargets(W, H); const guides = [];
+      const pick = (val, targets) => { let best = null; for (const t of targets) { const d = Math.abs(val - t); if (d < T.thr && (!best || d < best.d)) best = { d, t }; } return best; };
+      const bx = pick(cx, T.x); let nx = cx; if (bx) { nx = bx.t; guides.push({ axis: 'x', pos: bx.t }); }
+      const by = pick(cy, T.y); let ny = cy; if (by) { ny = by.t; guides.push({ axis: 'y', pos: by.t }); }
+      return { x: nx, y: ny, guides };
+    }
+    function drawGuides(c) {
+      if (!activeGuides.length) return;
+      c.save(); c.strokeStyle = 'rgba(255,45,85,0.9)'; c.lineWidth = 1; c.setLineDash([7, 6]);
+      for (const g of activeGuides) { c.beginPath(); if (g.axis === 'x') { c.moveTo(g.pos, 0); c.lineTo(g.pos, canvas.height); } else { c.moveTo(0, g.pos); c.lineTo(canvas.width, g.pos); } c.stroke(); }
+      c.setLineDash([]); c.restore();
+    }
+    // Align the selected overlay (or the text line if none selected) to the canvas.
+    function alignSelected(kind) {
+      const W = canvas.width, H = canvas.height; const margin = Math.round(Math.min(W, H) * 0.05);
+      const it = overlayItems.find((o) => o.id === selectedOverlayId);
+      if (it) {
+        if (kind === 'left') it.x = margin; else if (kind === 'cx') it.x = W / 2 - it.w / 2; else if (kind === 'right') it.x = W - margin - it.w;
+        else if (kind === 'top') it.y = margin; else if (kind === 'cy') it.y = H / 2 - it.h / 2; else if (kind === 'bottom') it.y = H - margin - it.h;
+        persistOverlays(); return;
+      }
+      if (controls.get('showTextLine')) {
+        const cur = textLinePos || { x: W / 2, y: H / 2 - 175 };
+        const hw = lastTextBounds ? lastTextBounds.w / 2 : 0, hh = lastTextBounds ? lastTextBounds.h / 2 : 0;
+        const p = { x: cur.x, y: cur.y };
+        if (kind === 'left') p.x = margin + hw; else if (kind === 'cx') p.x = W / 2; else if (kind === 'right') p.x = W - margin - hw;
+        else if (kind === 'top') p.y = margin + hh; else if (kind === 'cy') p.y = H / 2; else if (kind === 'bottom') p.y = H - margin - hh;
+        textLinePos = p; controls.set('textLinePos', p);
+      }
+    }
+    unsubs.push(controls.onAction('alignLeft', () => alignSelected('left')));
+    unsubs.push(controls.onAction('alignCenterH', () => alignSelected('cx')));
+    unsubs.push(controls.onAction('alignRight', () => alignSelected('right')));
+    unsubs.push(controls.onAction('alignTop', () => alignSelected('top')));
+    unsubs.push(controls.onAction('alignCenterV', () => alignSelected('cy')));
+    unsubs.push(controls.onAction('alignBottom', () => alignSelected('bottom')));
+
+    // ── inline text editing (double-click a text overlay) ──
+    function positionEditor(ta, item) {
+      const rect = canvas.getBoundingClientRect();
+      const host = canvas.parentElement; const areaRect = host.getBoundingClientRect();
+      const sx = rect.width / canvas.width, sy = rect.height / canvas.height;
+      ta.style.left = ((rect.left - areaRect.left) + item.x * sx) + 'px';
+      ta.style.top = ((rect.top - areaRect.top) + item.y * sy) + 'px';
+      ta.style.fontSize = Math.max(10, (item.fontSize || 24) * sy) + 'px';
+      ta.style.fontFamily = getSafeFontFamily();
+      ta.style.fontWeight = (item.style === 'Bold' || item.style === 'Bold Italic') ? '700' : '400';
+      ta.style.fontStyle = (item.style === 'Italic' || item.style === 'Bold Italic') ? 'italic' : 'normal';
+      ta.style.color = item.color || '#fff';
+      ta.style.width = Math.max(90, (item.w || 120) * sx + 28) + 'px';
+    }
+    function closeTextEditor() {
+      const ed = canvas.parentElement && canvas.parentElement.querySelector('.nsaano-overlay-edit');
+      if (ed) ed.remove();
+      if (editingOverlayId) { editingOverlayId = null; persistOverlays(); }
+    }
+    function openTextEditor(item) {
+      closeTextEditor();
+      editingOverlayId = item.id;
+      const ta = document.createElement('textarea');
+      ta.className = 'nsaano-overlay-edit';
+      ta.value = item.text || '';
+      ta.spellcheck = false;
+      ta.style.cssText = 'position:absolute;z-index:6;margin:0;padding:3px 6px;border:1px solid rgba(0,122,255,0.95);border-radius:6px;background:rgba(10,10,10,0.82);outline:none;resize:none;overflow:hidden;line-height:1.2;white-space:pre;box-shadow:0 6px 24px rgba(0,0,0,0.5);';
+      positionEditor(ta, item);
+      ta.addEventListener('input', () => {
+        item.text = ta.value;
+        if (item.textType === 'Animated (Typing)') item.typingIndex = applyCasing(item.text, item.casing).length;
+        positionEditor(ta, item);
+      });
+      ta.addEventListener('keydown', (ev) => {
+        ev.stopPropagation();
+        if ((ev.key === 'Enter' && !ev.shiftKey) || ev.key === 'Escape') { ev.preventDefault(); ta.blur(); }
+      });
+      ta.addEventListener('blur', () => closeTextEditor());
+      canvas.parentElement.appendChild(ta);
+      ta.focus(); ta.select();
+    }
+    function onDblClick(e) {
+      const pos = runtime.getMousePos(e);
+      const hit = findOverlayAt(pos);
+      if (hit && hit.kind === 'text') { selectedOverlayId = hit.id; openTextEditor(hit); e.preventDefault(); }
+    }
+    canvas.addEventListener('dblclick', onDblClick);
+    unsubs.push(() => { canvas.removeEventListener('dblclick', onDblClick); closeTextEditor(); });
+
     function onMove(e) {
       const pos = runtime.getMousePos(e);
       if (draggingOverlay) {
         const it = overlayItems.find((o) => o.id === draggingOverlay.id);
         if (it) {
-          if (draggingOverlay.mode === 'move') { it.x = pos.x - draggingOverlay.offsetX; it.y = pos.y - draggingOverlay.offsetY; }
-          else if (draggingOverlay.mode === 'resize') {
+          if (draggingOverlay.mode === 'move') {
+            const snap = snapBox(pos.x - draggingOverlay.offsetX, pos.y - draggingOverlay.offsetY, it.w, it.h);
+            it.x = snap.x; it.y = snap.y; activeGuides = snap.guides;
+          } else if (draggingOverlay.mode === 'resize') {
+            activeGuides = [];
             if (it.kind === 'text') { it.fontSize = Math.max(10, draggingOverlay.startFontSize + (pos.y - draggingOverlay.startMy)); }
             else { const aspect = draggingOverlay.startW / draggingOverlay.startH; const newW = Math.max(20, draggingOverlay.startW + (pos.x - draggingOverlay.startMx)); it.w = newW; it.h = newW / aspect; }
           }
@@ -824,7 +942,11 @@ export default {
         canvas.style.cursor = draggingOverlay.mode === 'resize' ? 'nwse-resize' : 'grabbing';
         e.preventDefault(); return;
       }
-      if (isDraggingText) { textLinePos = { x: pos.x - dragOffset.x, y: pos.y - dragOffset.y }; canvas.style.cursor = 'grabbing'; e.preventDefault(); return; }
+      if (isDraggingText) {
+        const snap = snapCenter(pos.x - dragOffset.x, pos.y - dragOffset.y);
+        textLinePos = { x: snap.x, y: snap.y }; activeGuides = snap.guides;
+        canvas.style.cursor = 'grabbing'; e.preventDefault(); return;
+      }
       const selectedItem = overlayItems.find((o) => o.id === selectedOverlayId);
       if (selectedItem && overlayResizeHandleHit(selectedItem, pos)) { hoveringOverlayId = selectedItem.id; canvas.style.cursor = 'nwse-resize'; return; }
       const hit = findOverlayAt(pos);
@@ -860,6 +982,7 @@ export default {
         isDraggingText = false; canvas.style.cursor = hoveringText ? 'grab' : 'default';
         if (textLinePos) controls.set('textLinePos', { x: textLinePos.x, y: textLinePos.y });
       }
+      activeGuides = [];
     }
     function onKeyDown(e) {
       if ((e.key === 'Delete' || e.key === 'Backspace') && selectedOverlayId) {
@@ -936,6 +1059,7 @@ export default {
       if (mode === 'Gallery') drawGallery(ctx, timestamp); else drawKeyboard(ctx, timestamp);
       drawOverlays(ctx);
       drawTextLine(ctx, timestamp);
+      if ((draggingOverlay || isDraggingText) && activeGuides.length) drawGuides(ctx);
 
       if (glowActive) {
         const pulse = Math.sin(timestamp * 0.001 * (controls.get('canvasGlowPulseSpeed') || 1)) * 0.5 + 0.5;
