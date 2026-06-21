@@ -43,19 +43,21 @@ function captureStill(registry, { scale, format, transparent, quality }) {
   const baseW = canvas.width, baseH = canvas.height;
   const w = Math.round(baseW * scale), h = Math.round(baseH * scale);
 
+  const wantTransparent = (format === 'png' && transparent);
+  const prevFlag = window.__nsaanoExportTransparent;
+  window.__nsaanoExportTransparent = wantTransparent; // tells the tool to skip painting the background
+
   canvas.width = w; canvas.height = h;
   try { def.draw(performance.now()); } catch (e) { console.error(e); }
 
   const out = el('canvas'); out.width = w; out.height = h;
   const octx = out.getContext('2d');
-  if (!(format === 'png' && transparent)) {
-    octx.fillStyle = bgColorFor(controls);
-    octx.fillRect(0, 0, w, h);
-  }
+  if (!wantTransparent) { octx.fillStyle = bgColorFor(controls); octx.fillRect(0, 0, w, h); } // opaque backing (e.g. JPEG with no bg)
   octx.drawImage(canvas, 0, 0);
 
-  // restore live resolution
+  // restore live resolution + flag, then redraw the on-screen canvas normally
   canvas.width = baseW; canvas.height = baseH;
+  window.__nsaanoExportTransparent = prevFlag;
   try { def.draw(performance.now()); } catch (e) { console.error(e); }
 
   return format === 'jpeg' ? out.toDataURL('image/jpeg', quality) : out.toDataURL('image/png');

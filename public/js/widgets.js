@@ -168,6 +168,26 @@ function readFiles(files, cb) {
   });
 }
 
+function buildVideo(field, controls) {
+  const wrap = el('div', { class: 'imgfield' });
+  const file = el('input', { type: 'file', accept: 'video/*', class: 'imgfield-input' });
+  const btn = el('button', { class: 'btn-ghost imgfield-btn', type: 'button' }, 'Choose video');
+  const thumb = el('div', { class: 'imgfield-thumbs' });
+  btn.addEventListener('click', () => file.click());
+  file.addEventListener('change', () => readFiles(file.files, (arr) => { if (arr[0]) controls.set(field.key, arr[0]); }));
+  wrap.appendChild(btn); wrap.appendChild(file); wrap.appendChild(thumb);
+  const sync = () => {
+    thumb.innerHTML = '';
+    if (controls.get(field.key)) {
+      const t = el('div', { class: 'thumb thumb--video' });
+      const x = el('button', { class: 'thumb-x', type: 'button' }, '×');
+      x.addEventListener('click', () => controls.set(field.key, ''));
+      t.appendChild(x); thumb.appendChild(t);
+    }
+  };
+  return { node: row(field.label, wrap, { stack: true }), sync };
+}
+
 function buildImage(field, controls) {
   const wrap = el('div', { class: 'imgfield' });
   const file = el('input', { type: 'file', accept: 'image/*', class: 'imgfield-input' });
@@ -264,6 +284,7 @@ const BUILDERS = {
   textarea: buildTextarea,
   toggle: buildToggle,
   image: buildImage,
+  video: buildVideo,
   images: buildImages,
   font: buildFont,
   action: buildAction,

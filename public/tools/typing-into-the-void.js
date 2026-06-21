@@ -51,6 +51,27 @@ const HANDLE_SIZE = 14;
 function clockNow() { const c = (typeof window !== 'undefined') && window.__nsaanoClock; return c ? c.now() : performance.now(); }
 function clockManual() { const c = (typeof window !== 'undefined') && window.__nsaanoClock; return !!(c && c.isManual()); }
 
+// ── artisan helpers (shared by skins, textured keys, and motifs) ──
+function goldGrad(c, x0, y0, x1, y1, accent) {
+  const a = hexToRgb(accent || '#D9B45B');
+  const lite = `rgb(${Math.min(255, a.r + 60)},${Math.min(255, a.g + 55)},${Math.min(255, a.b + 40)})`;
+  const deep = `rgb(${Math.round(a.r * 0.55)},${Math.round(a.g * 0.5)},${Math.round(a.b * 0.3)})`;
+  const g = c.createLinearGradient(x0, y0, x1, y1);
+  g.addColorStop(0, lite); g.addColorStop(0.5, accent || '#D9B45B'); g.addColorStop(1, deep);
+  return g;
+}
+function hash01(a, b) { const h = Math.sin(a * 127.1 + b * 311.7) * 43758.5453; return h - Math.floor(h); }
+function drawButterfly(c, size, fill) {
+  const s = size;
+  c.save(); c.fillStyle = fill;
+  c.beginPath(); c.ellipse(-s * 0.26, -s * 0.16, s * 0.26, s * 0.34, -0.5, 0, Math.PI * 2); c.fill();
+  c.beginPath(); c.ellipse(s * 0.26, -s * 0.16, s * 0.26, s * 0.34, 0.5, 0, Math.PI * 2); c.fill();
+  c.beginPath(); c.ellipse(-s * 0.2, s * 0.22, s * 0.18, s * 0.24, 0.5, 0, Math.PI * 2); c.fill();
+  c.beginPath(); c.ellipse(s * 0.2, s * 0.22, s * 0.18, s * 0.24, -0.5, 0, Math.PI * 2); c.fill();
+  c.fillRect(-s * 0.03, -s * 0.34, s * 0.06, s * 0.7);
+  c.restore();
+}
+
 // ─── control schema (drives panel UI, AI tool spec, and export) ──────────────
 const controlSchema = [
   { title: 'Mode & Layout', fields: [
@@ -60,10 +81,10 @@ const controlSchema = [
       'Responsive', 'Portrait: 1080 x 1350 (4:5)', 'Square: 1080 x 1080 (1:1)',
       'Landscape: 1920 x 1080 (16:9)', 'Stories: 1080 x 1920 (9:16)', 'Custom'
     ] },
-    { key: 'keySkin', type: 'select', label: 'Key Skin', options: ['Classic', 'Cyber Hack', 'Fingerprint', 'Hologram', 'Terminal', 'Neon Arcade'] },
+    { key: 'keySkin', type: 'select', label: 'Key Skin', options: ['Classic', 'Jade Resin', 'Marble', 'Amber', 'Cyber Hack', 'Fingerprint', 'Hologram', 'Terminal', 'Neon Arcade'] },
     { key: 'keyMaterial', type: 'select', label: 'Key Material', options: ['Glass', 'Plastic', 'Metal', 'Matte'] },
     { key: 'keyFillType', type: 'select', label: 'Key Fill Type', options: ['Plain', 'Gradient'] },
-    { key: 'keyShape', type: 'select', label: 'Key Shape', options: ['Rounded', 'Square', 'Circle'] },
+    { key: 'keyShape', type: 'select', label: 'Key Shape', options: ['Rounded', 'Square', 'Circle', 'Hex'] },
     { key: 'keyScale', type: 'slider', label: 'Key Scale (Size)', min: 0.2, max: 2, step: 0.05 },
     { key: 'keySpacing', type: 'slider', label: 'Key Spacing', min: 0, max: 60, step: 1 },
     { key: 'keyAspectRatio', type: 'slider', label: 'Key Aspect Ratio', min: 0.5, max: 2, step: 0.05 },
@@ -130,7 +151,8 @@ const controlSchema = [
   ] },
   { title: 'Video Background', fields: [
     { key: 'useBgVideo', type: 'toggle', label: 'Enable Video Background' },
-    { key: 'bgVideoUrl', type: 'text', label: 'Video URL', placeholder: 'https://…/clip.mp4' }
+    { key: 'bgVideoFile', type: 'video', label: 'Upload Video' },
+    { key: 'bgVideoUrl', type: 'text', label: 'Video URL', placeholder: 'https://…/clip.mp4 (used if no upload)' }
   ] },
   { title: 'Ambient Canvas Glow', fields: [
     { key: 'canvasGlowActive', type: 'toggle', label: 'Enable Canvas Glow' },
@@ -145,6 +167,14 @@ const controlSchema = [
     { key: 'paletteC', type: 'color', label: 'Palette C' },
     { key: 'paletteD', type: 'color', label: 'Palette D' },
     { key: 'paletteE', type: 'color', label: 'Palette E' }
+  ] },
+  { title: 'Artisan & Texture', fields: [
+    { type: 'note', text: 'Try the Jade Resin / Marble / Amber skins, or upload a texture (jade, marble, pressed flowers…) to map a real material across the keys.' },
+    { key: 'keyTexture', type: 'image', label: 'Key Texture' },
+    { key: 'goldLegends', type: 'toggle', label: 'Gold Legends' },
+    { key: 'keyMotifs', type: 'toggle', label: 'Gold Motifs (butterflies)' },
+    { key: 'motifDensity', type: 'slider', label: 'Motif Density', min: 0, max: 100, step: 5 },
+    { key: 'motifColor', type: 'color', label: 'Motif / Accent Color' }
   ] },
   { title: 'Background', fields: [
     { key: 'bgMode', type: 'segmented', label: 'Background', options: ['None', 'Solid', 'Image'] },
@@ -176,7 +206,8 @@ const defaults = {
   lottieUrl: '', overlayAssets: [],
   galleryImages: [], galleryFullscreen: true, galleryCols: 6, galleryRows: 4, galleryGap: 6,
   galleryRevealSpeed: 600, galleryPersistence: 4, galleryFit: 'cover',
-  useBgVideo: false, bgVideoUrl: '',
+  useBgVideo: false, bgVideoUrl: '', bgVideoFile: '',
+  keyTexture: '', goldLegends: false, keyMotifs: false, motifDensity: 40, motifColor: '#D9B45B',
   canvasGlowActive: true, canvasGlowColor: '#FFFFFF', canvasGlowIntensity: 60, canvasGlowPulseSpeed: 1.2,
   randomKeyColors: false, paletteA: '#FF3B30', paletteB: '#FFCC00', paletteC: '#34C759', paletteD: '#007AFF', paletteE: '#AF52DE',
   playing: true, snapEnabled: true,
@@ -278,19 +309,21 @@ export default {
     // ── video background ──
     function updateBgVideo() {
       const useBgVideo = controls.get('useBgVideo');
-      const url = controls.get('bgVideoUrl');
+      const url = controls.get('bgVideoFile') || controls.get('bgVideoUrl'); // uploaded file wins over URL
       if (!useBgVideo || !url) { if (bgVideoEl) bgVideoEl.pause(); return; }
       if (url === lastBgVideoUrl && bgVideoEl) { if (bgVideoEl.paused) bgVideoEl.play().catch(() => {}); return; }
       lastBgVideoUrl = url;
       bgVideoReady = false;
       if (bgVideoEl) { bgVideoEl.pause(); bgVideoEl.src = ''; }
       const v = document.createElement('video');
-      v.src = url; v.muted = true; v.loop = true; v.playsInline = true; v.crossOrigin = 'anonymous';
+      if (!url.startsWith('data:') && !url.startsWith('blob:')) v.crossOrigin = 'anonymous';
+      v.src = url; v.muted = true; v.loop = true; v.playsInline = true;
       v.addEventListener('loadeddata', () => { bgVideoReady = true; v.play().catch(() => {}); });
       bgVideoEl = v;
     }
     unsubs.push(controls.onChange('useBgVideo', updateBgVideo));
     unsubs.push(controls.onChange('bgVideoUrl', updateBgVideo));
+    unsubs.push(controls.onChange('bgVideoFile', updateBgVideo));
     updateBgVideo();
 
     // ── reset / replay ──
@@ -464,8 +497,13 @@ export default {
       c.beginPath();
       const lx = -kw / 2, ly = -kh / 2;
       if (keyShape === 'Circle' && !isSpace) c.arc(0, 0, Math.min(kw, kh) / 2, 0, Math.PI * 2);
-      else if (keyShape === 'Square') c.rect(lx, ly, kw, kh);
-      else { const rr = keyShape === 'Rounded' ? keyRoundness : 0; c.roundRect(lx, ly, kw, kh, rr); }
+      else if (keyShape === 'Hex' && !isSpace) {
+        // flat-top hexagon inscribed in the key cell (honeycomb keycap)
+        const qx = kw / 4;
+        c.moveTo(lx + qx, ly); c.lineTo(lx + kw - qx, ly); c.lineTo(lx + kw, 0);
+        c.lineTo(lx + kw - qx, ly + kh); c.lineTo(lx + qx, ly + kh); c.lineTo(lx, 0); c.closePath();
+      } else if (keyShape === 'Square') c.rect(lx, ly, kw, kh);
+      else { const rr = (keyShape === 'Rounded') ? keyRoundness : 0; c.roundRect(lx, ly, kw, kh, rr); }
     }
     function drawUnderline(c, text, x, y, fontSize, align, baseline) {
       const width = c.measureText(text).width;
@@ -574,7 +612,8 @@ export default {
         hg.addColorStop(0, 'rgba(255,255,255,0.5)'); hg.addColorStop(1, 'rgba(255,255,255,0.0)');
         c.fillStyle = hg; c.fillRect(lx, ly, kw, highlightHeight); c.restore();
       }
-      c.fillStyle = fontColor; c.font = `${keyFontSize}px ${safeFont}, sans-serif`;
+      c.fillStyle = opts.goldText ? goldGrad(c, 0, -keyFontSize / 2, 0, keyFontSize / 2, opts.accent) : fontColor;
+      c.font = `${keyFontSize}px ${safeFont}, sans-serif`;
       c.shadowColor = 'rgba(0,0,0,0.3)'; c.shadowBlur = 2; c.shadowOffsetY = 1;
       c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(keyChar, 0, 0);
     }
@@ -667,6 +706,12 @@ export default {
       const keyFillType = controls.get('keyFillType') || 'Plain';
       const keyRandomness = controls.get('keyRandomness') || 0;
       const keySkin = controls.get('keySkin') || 'Classic';
+      const goldLegends = controls.get('goldLegends');
+      const keyMotifs = controls.get('keyMotifs');
+      const motifDensity = controls.get('motifDensity') || 0;
+      const motifColor = controls.get('motifColor') || '#D9B45B';
+      const keyTextureUrl = controls.get('keyTexture');
+      const texEntry = keyTextureUrl ? loadMedia(keyTextureUrl) : null;
 
       function pressProgressFor(activeInstance) {
         if (!activeInstance) return 0;
@@ -688,7 +733,7 @@ export default {
         kbWidth = Math.min(w * 0.9, 1000); startX = (w - kbWidth) / 2 + keysPosX; startY = (h / 2) + keysPosY; rowOffsetScale = 20;
       }
 
-      const skinOpts = { keyShape, keyRoundness, fillColor, strokeColor, fontColor, safeFont, keyFontSize, showStroke, showFill, showGlow, glow, glowColor, keyMaterial, keyFillType };
+      const skinOpts = { keyShape, keyRoundness, fillColor, strokeColor, fontColor, safeFont, keyFontSize, showStroke, showFill, showGlow, glow, glowColor, keyMaterial, keyFillType, goldText: goldLegends, accent: motifColor };
       const maxKeysInRow = Math.max(...KEYBOARD_LAYOUT.map((r) => r.length));
       const uniformKeyW = ((kbWidth - (maxKeysInRow - 1) * keySpacingVal) / maxKeysInRow) * keyScale;
       const uniformKeyH = uniformKeyW / keyAspectRatio;
@@ -709,17 +754,39 @@ export default {
           const isSpace = key === 'SPACE'; const displayChar = isSpace ? '' : key;
           c.save(); c.globalAlpha = alpha;
           const jitterVal = getKeyJitter(r, col, keyRandomness);
-          c.translate(x + kw / 2 + jitterVal.dx, y + kh / 2 + jitterVal.dy); c.rotate(jitterVal.angle);
-          if (keySkin === 'Classic') {
+          const acx = x + kw / 2 + jitterVal.dx, acy = y + kh / 2 + jitterVal.dy;
+          c.translate(acx, acy); c.rotate(jitterVal.angle);
+          const perKeyOpts = Object.assign({}, skinOpts, { fillColor: getKeyColor(r, col, fillColor), seed: hash01(r + 1, col + 1) });
+
+          if (texEntry && texEntry.ready) {
+            // photoreal: each key is a window into one canvas-spanning texture (veins/flowers flow across keys)
+            c.save();
+            if (activeInstance && showGlow && glow > 0) { c.shadowBlur = glow * alpha; c.shadowColor = glowColor; }
+            buildKeyPath(c, keyShape, kw, kh, isSpace, keyRoundness); c.clip();
+            runtime.drawImage(c, texEntry.el, -acx, -acy, canvas.width, canvas.height, 'cover');
+            c.restore();
+            buildKeyPath(c, keyShape, kw, kh, isSpace, keyRoundness);
+            c.strokeStyle = goldLegends ? goldGrad(c, -kw / 2, -kh / 2, kw / 2, kh / 2, motifColor) : 'rgba(255,255,255,0.35)';
+            c.lineWidth = 1.5; c.stroke();
+            if (displayChar) {
+              c.font = `${keyFontSize}px ${safeFont}, serif`; c.textAlign = 'center'; c.textBaseline = 'middle';
+              c.fillStyle = goldLegends ? goldGrad(c, 0, -keyFontSize / 2, 0, keyFontSize / 2, motifColor) : fontColor;
+              c.shadowColor = 'rgba(0,0,0,0.4)'; c.shadowBlur = 3; c.fillText(displayChar, 0, 0); c.shadowBlur = 0;
+            }
+          } else if (keySkin === 'Classic') {
             if (activeInstance && showGlow && glow > 0) { c.shadowBlur = glow * alpha; c.shadowColor = glowColor; c.shadowOffsetY = 2 * alpha; }
             else { c.shadowBlur = 6 * alpha; c.shadowColor = 'rgba(0,0,0,0.15)'; c.shadowOffsetY = 3 * alpha; }
-            const perKeyOpts = Object.assign({}, skinOpts, { fillColor: getKeyColor(r, col, fillColor) });
             drawKeyClassic(c, kw, kh, isSpace, displayChar, alpha, pressProgress, perKeyOpts);
           } else {
             const renderer = SKIN_RENDERERS[keySkin];
-            const perKeyOpts = Object.assign({}, skinOpts, { fillColor: getKeyColor(r, col, fillColor) });
             if (renderer) renderer(c, kw, kh, isSpace, displayChar, alpha, pressProgress, perKeyOpts);
-            else drawKeyClassic(c, kw, kh, isSpace, displayChar, alpha, pressProgress, skinOpts);
+            else drawKeyClassic(c, kw, kh, isSpace, displayChar, alpha, pressProgress, perKeyOpts);
+          }
+
+          // gold motif (butterfly) on a deterministic subset of keys
+          if (keyMotifs && motifDensity > 0 && !isSpace && hash01(r * 2.3 + 5, col * 1.7 + 3) * 100 < motifDensity) {
+            c.shadowColor = 'rgba(0,0,0,0)'; c.shadowBlur = 0;
+            drawButterfly(c, Math.min(kw, kh) * 0.52, goldGrad(c, -kw * 0.2, -kh * 0.2, kw * 0.2, kh * 0.2, motifColor));
           }
           c.restore();
         });
@@ -1022,6 +1089,20 @@ export default {
       } else { canvas.style.boxShadow = 'none'; canvas.style.border = 'none'; }
 
       ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // Paint the background INTO the canvas (so exports capture it — CSS background isn't
+      // captured by toDataURL / captureStream). Skipped for transparent PNG export.
+      const transparentExport = (typeof window !== 'undefined') && window.__nsaanoExportTransparent;
+      const bgMode = controls.get('bgMode') || 'None';
+      if (!transparentExport && bgMode !== 'None') {
+        if (bgMode === 'Image' && controls.get('bgImage')) {
+          const be = loadMedia(controls.get('bgImage'));
+          if (be && be.ready) drawMediaCover(ctx, be, 0, 0, canvas.width, canvas.height, controls.get('bgFit') || 'cover');
+          else { ctx.fillStyle = controls.get('bgColor') || '#000'; ctx.fillRect(0, 0, canvas.width, canvas.height); }
+        } else {
+          ctx.fillStyle = controls.get('bgColor') || '#000'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+        }
+      }
       if (controls.get('useBgVideo') && bgVideoEl && bgVideoReady) runtime.drawImage(ctx, bgVideoEl, 0, 0, canvas.width, canvas.height, 'cover');
 
       const text = applyCasing(controls.get('text') || '', controls.get('textCase') || 'Original');
@@ -1187,5 +1268,73 @@ function makeSkinRenderers(buildKeyPath) {
     if (showStroke) { buildKeyPath(c, keyShape, kw, kh, isSpace, keyRoundness); c.shadowColor = gColor; c.shadowBlur = (showGlow ? glow : 12) + 6 + pressProgress * 20; c.strokeStyle = `rgba(${sRgb.r}, ${sRgb.g}, ${sRgb.b}, 1)`; c.lineWidth = 2 + pressProgress * 1; c.stroke(); c.shadowBlur = 0; }
     c.font = `${keyFontSize}px ${safeFont}, sans-serif`; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillStyle = fontColor || '#FFFFFF'; c.shadowColor = gColor; c.shadowBlur = 6 + pressProgress * 10; c.fillText(keyChar, 0, 0); c.shadowBlur = 0;
   }
-  return { 'Cyber Hack': drawSkinCyberHack, Fingerprint: drawSkinFingerprint, Hologram: drawSkinHologram, Terminal: drawSkinTerminal, 'Neon Arcade': drawSkinNeonArcade };
+  function legend(c, keyChar, opts, defaultColor) {
+    const { keyFontSize, safeFont, fontColor, goldText, accent } = opts;
+    if (!keyChar) return;
+    c.font = `${keyFontSize}px ${safeFont}, serif`; c.textAlign = 'center'; c.textBaseline = 'middle';
+    c.fillStyle = goldText ? goldGrad(c, 0, -keyFontSize / 2, 0, keyFontSize / 2, accent) : (defaultColor || fontColor || '#fff');
+    c.shadowColor = 'rgba(0,0,0,0.3)'; c.shadowBlur = 2; c.fillText(keyChar, 0, 0); c.shadowBlur = 0;
+  }
+
+  function drawSkinJade(c, kw, kh, isSpace, keyChar, alpha, pressProgress, opts) {
+    const { keyShape, keyRoundness, fillColor, showStroke, showGlow, glow, glowColor, accent } = opts;
+    const lx = -kw / 2, ly = -kh / 2; const rgb = hexToRgb(fillColor && fillColor !== '#FFFFFF' ? fillColor : '#7CA56A');
+    c.save(); buildKeyPath(c, keyShape, kw, kh, isSpace, keyRoundness); c.clip();
+    const g = c.createLinearGradient(0, ly, 0, ly + kh);
+    g.addColorStop(0, `rgba(${Math.min(255, rgb.r + 45)},${Math.min(255, rgb.g + 55)},${Math.min(255, rgb.b + 35)},0.88)`);
+    g.addColorStop(0.5, `rgba(${rgb.r},${rgb.g},${rgb.b},0.66)`);
+    g.addColorStop(1, `rgba(${Math.max(0, rgb.r - 30)},${Math.max(0, rgb.g - 18)},${Math.max(0, rgb.b - 30)},0.82)`);
+    c.fillStyle = g; c.fillRect(lx, ly, kw, kh);
+    const rg = c.createRadialGradient(0, 0, 0, 0, 0, Math.max(kw, kh) * 0.6);
+    rg.addColorStop(0, 'rgba(255,255,240,0.22)'); rg.addColorStop(1, 'rgba(255,255,255,0)');
+    c.fillStyle = rg; c.fillRect(lx, ly, kw, kh);
+    const hg = c.createLinearGradient(0, ly, 0, ly + kh * 0.42); hg.addColorStop(0, 'rgba(255,255,255,0.4)'); hg.addColorStop(1, 'rgba(255,255,255,0)');
+    c.fillStyle = hg; c.fillRect(lx, ly, kw, kh * 0.42);
+    c.restore();
+    if (showStroke) {
+      buildKeyPath(c, keyShape, kw, kh, isSpace, keyRoundness);
+      if (showGlow && glow > 0) { c.shadowColor = glowColor || '#fff'; c.shadowBlur = glow * alpha; }
+      c.strokeStyle = goldGrad(c, lx, ly, lx + kw, ly + kh, accent); c.lineWidth = 1.5; c.stroke(); c.shadowBlur = 0;
+    }
+    legend(c, keyChar, opts, '#34432a');
+  }
+
+  function drawSkinMarble(c, kw, kh, isSpace, keyChar, alpha, pressProgress, opts) {
+    const { keyShape, keyRoundness, fillColor, showStroke, accent } = opts;
+    const lx = -kw / 2, ly = -kh / 2; const base = hexToRgb(fillColor && fillColor !== '#FFFFFF' ? fillColor : '#7C1322');
+    let s = (opts.seed || 0.37);
+    const rnd = () => { s = (s * 9301 + 49297) % 233280 / 233280; return s; };
+    c.save(); buildKeyPath(c, keyShape, kw, kh, isSpace, keyRoundness); c.clip();
+    c.fillStyle = `rgb(${base.r},${base.g},${base.b})`; c.fillRect(lx, ly, kw, kh);
+    for (let i = 0; i < 5; i++) {
+      const bx = lx + rnd() * kw, by = ly + rnd() * kh, br = kw * (0.2 + rnd() * 0.5);
+      const bg = c.createRadialGradient(bx, by, 0, bx, by, br); const dark = rnd() > 0.5;
+      bg.addColorStop(0, dark ? 'rgba(0,0,0,0.55)' : 'rgba(255,255,255,0.14)'); bg.addColorStop(1, 'rgba(0,0,0,0)');
+      c.fillStyle = bg; c.fillRect(lx, ly, kw, kh);
+    }
+    c.strokeStyle = goldGrad(c, lx, ly, lx + kw, ly + kh, accent); c.lineWidth = Math.max(0.8, kw * 0.02); c.globalAlpha = 0.85;
+    for (let v = 0; v < 3; v++) { c.beginPath(); let px = lx + rnd() * kw, py = ly; c.moveTo(px, py); while (py < ly + kh) { px += (rnd() - 0.5) * kw * 0.5; py += kh * 0.16; c.lineTo(px, py); } c.stroke(); }
+    c.globalAlpha = 1; c.restore();
+    if (showStroke) { buildKeyPath(c, keyShape, kw, kh, isSpace, keyRoundness); c.strokeStyle = 'rgba(0,0,0,0.4)'; c.lineWidth = 1.5; c.stroke(); }
+    legend(c, keyChar, opts, '#FBE9A8');
+  }
+
+  function drawSkinAmber(c, kw, kh, isSpace, keyChar, alpha, pressProgress, opts) {
+    const { keyShape, keyRoundness, fillColor, showStroke, showGlow, glow, glowColor } = opts;
+    const lx = -kw / 2, ly = -kh / 2; const base = hexToRgb(fillColor && fillColor !== '#FFFFFF' ? fillColor : '#C8791F');
+    c.save(); buildKeyPath(c, keyShape, kw, kh, isSpace, keyRoundness); c.clip();
+    const g = c.createLinearGradient(0, ly, 0, ly + kh);
+    g.addColorStop(0, `rgba(${Math.min(255, base.r + 50)},${Math.min(255, base.g + 40)},${Math.max(0, base.b)},0.95)`);
+    g.addColorStop(0.5, `rgba(${base.r},${Math.round(base.g * 0.7)},${Math.round(base.b * 0.4)},0.95)`);
+    g.addColorStop(1, `rgba(${Math.round(base.r * 0.5)},${Math.round(base.g * 0.3)},${Math.round(base.b * 0.2)},0.95)`);
+    c.fillStyle = g; c.fillRect(lx, ly, kw, kh);
+    c.globalAlpha = 0.3; for (let yy = ly + 3; yy < ly + kh; yy += 4) { c.fillStyle = 'rgba(255,220,150,0.55)'; c.fillRect(lx, yy, kw, 1); } c.globalAlpha = 1;
+    const rg = c.createRadialGradient(0, kh * 0.2, 0, 0, kh * 0.2, Math.max(kw, kh) * 0.7);
+    rg.addColorStop(0, 'rgba(255,210,130,0.4)'); rg.addColorStop(1, 'rgba(255,180,80,0)'); c.fillStyle = rg; c.fillRect(lx, ly, kw, kh);
+    c.restore();
+    if (showStroke) { buildKeyPath(c, keyShape, kw, kh, isSpace, keyRoundness); if (showGlow && glow > 0) { c.shadowColor = glowColor || '#FFB347'; c.shadowBlur = glow * alpha; } c.strokeStyle = 'rgba(120,70,20,0.75)'; c.lineWidth = 1.5; c.stroke(); c.shadowBlur = 0; }
+    legend(c, keyChar, opts, '#2e1c08');
+  }
+
+  return { 'Jade Resin': drawSkinJade, Marble: drawSkinMarble, Amber: drawSkinAmber, 'Cyber Hack': drawSkinCyberHack, Fingerprint: drawSkinFingerprint, Hologram: drawSkinHologram, Terminal: drawSkinTerminal, 'Neon Arcade': drawSkinNeonArcade };
 }
