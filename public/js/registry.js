@@ -7,6 +7,7 @@
 
 import { createControls } from './controls.js';
 import typingTool from '../tools/typing-into-the-void.js';
+import textCityTool from '../tools/text-city.js';
 
 const INSTALLED_KEY = 'nsaano:installed';
 const ACTIVE_KEY = 'nsaano:activeTool';
@@ -137,6 +138,7 @@ export function createRegistry({ canvas, ctx, runtime }) {
 
   // bootstrap
   register(typingTool, { builtin: true, filePath: './tools/typing-into-the-void.js' });
+  register(textCityTool, { builtin: true, filePath: './tools/text-city.js' });
 
   async function init() {
     await restoreInstalled();
