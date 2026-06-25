@@ -407,22 +407,43 @@ export default {
           for (const ln of lines) { lc.fillText(ln, w / 2, yy); yy += lh; }
         }
 
-        // 2) mask the content
+        // 2) mask the content — shared sweep helpers
+        const feather = Math.max(2, lightWidth * (0.12 + Math.min(1, softness) * 0.9));
+        const passed = (bx, by, lx, ly) => {
+          let d;
+          if (dir === 'Left to Right') d = lx - bx;
+          else if (dir === 'Right to Left') d = bx - lx;
+          else if (dir === 'Top to Bottom') d = ly - by;
+          else d = ((lx + ly) - (bx + by)) / Math.SQRT2;
+          return Math.max(0, Math.min(1, d / feather + 0.5));
+        };
+        const lit = (b, lx, ly) => passed(b.x + b.w / 2, b.y + b.h / 2, lx, ly);
+        const revP = lightAt(Math.min(1, loopT * 2));
+        const conP = lightAt(Math.max(0, (loopT - 0.5) * 2));
+
+        // Brick-EDGE mask: content is solid (fully revealed) well behind the edge, and the
+        // leading edge dissolves into sweeping bricks — so the transition IS bricks, not a fade.
+        const brickEdgeMask = (lx, ly) => {
+          maskLayer.width = w; maskLayer.height = h;
+          const mc = maskLayer.getContext('2d'); mc.clearRect(0, 0, w, h);
+          const band = lightWidth * (0.5 + Math.min(1, softness)); // width of the brick-dissolve zone
+          let sx = lx, sy = ly; // solid edge sits one band BEHIND the leading edge
+          if (dir === 'Left to Right') sx = lx - band;
+          else if (dir === 'Right to Left') sx = lx + band;
+          else if (dir === 'Top to Bottom') sy = ly - band;
+          else { sx = lx - band; sy = ly - band; }
+          mc.fillStyle = revealMask(mc, dir, sx, sy, lightWidth, 0.06, 'Wipe'); // near-hard solid behind
+          mc.fillRect(0, 0, w, h);
+          mc.fillStyle = '#fff';
+          bricks.forEach((b) => { const a = lit(b, lx, ly); if (a <= 0.01) return; mc.globalAlpha = a; drawRoundedRect(mc, b.x, b.y, b.w, b.h, b.radius); mc.fill(); });
+          mc.globalAlpha = 1;
+          return maskLayer;
+        };
+
         if (revealMode === 'Brick Mosaic') {
-          // The bricks are the stencil: each lit brick is a window onto the content behind it.
+          // Mosaic: bricks-only stencil — each lit brick is a permanent window onto the content.
           maskLayer.width = w; maskLayer.height = h;
           const mc = maskLayer.getContext('2d'); mc.clearRect(0, 0, w, h); mc.fillStyle = '#fff';
-          const feather = Math.max(2, lightWidth * (0.12 + Math.min(1, softness) * 0.9));
-          const passed = (bx, by, lx, ly) => {
-            let d;
-            if (dir === 'Left to Right') d = lx - bx;
-            else if (dir === 'Right to Left') d = bx - lx;
-            else if (dir === 'Top to Bottom') d = ly - by;
-            else d = ((lx + ly) - (bx + by)) / Math.SQRT2;
-            return Math.max(0, Math.min(1, d / feather + 0.5));
-          };
-          const revP = lightAt(Math.min(1, loopT * 2));
-          const conP = lightAt(Math.max(0, (loopT - 0.5) * 2));
           bricks.forEach((b) => {
             const bx = b.x + b.w / 2, by = b.y + b.h / 2;
             let a;
@@ -433,27 +454,25 @@ export default {
               else dist = Math.abs((bx + by) - (lightX + lightY)) / (lightWidth * Math.SQRT2);
               a = Math.pow(Math.max(0, Math.min(1, Math.exp(-Math.pow(dist / (softness || 0.01), 2)))), gamma);
             } else if (style === 'Reveal & Conceal') {
-              a = passed(bx, by, revP.x, revP.y) * (1 - passed(bx, by, conP.x, conP.y));
-            } else { // Wipe — reveal and hold
-              a = passed(bx, by, lightX, lightY);
-            }
+              a = lit(b, revP.x, revP.y) * (1 - lit(b, conP.x, conP.y));
+            } else { a = lit(b, lightX, lightY); }
             if (a <= 0.004) return;
             mc.globalAlpha = a; drawRoundedRect(mc, b.x, b.y, b.w, b.h, b.radius); mc.fill();
           });
           mc.globalAlpha = 1;
           lc.globalCompositeOperation = 'destination-in'; lc.drawImage(maskLayer, 0, 0); lc.globalCompositeOperation = 'source-over';
-        } else if (style === 'Reveal & Conceal') {
-          // reveal wipe in, then a second wipe conceals it
-          const revP = lightAt(Math.min(1, loopT * 2));
-          const conP = lightAt(Math.max(0, (loopT - 0.5) * 2));
+        } else if (style === 'Spotlight') {
+          // smooth light band
           lc.globalCompositeOperation = 'destination-in';
-          lc.fillStyle = revealMask(lc, dir, revP.x, revP.y, lightWidth, softness, 'Wipe'); lc.fillRect(0, 0, w, h);
-          lc.globalCompositeOperation = 'destination-out';
-          lc.fillStyle = revealMask(lc, dir, conP.x, conP.y, lightWidth, softness, 'Wipe'); lc.fillRect(0, 0, w, h);
+          lc.fillStyle = revealMask(lc, dir, lightX, lightY, lightWidth, softness, 'Spotlight'); lc.fillRect(0, 0, w, h);
           lc.globalCompositeOperation = 'source-over';
-        } else {
-          lc.globalCompositeOperation = 'destination-in';
-          lc.fillStyle = revealMask(lc, dir, lightX, lightY, lightWidth, softness, style); lc.fillRect(0, 0, w, h);
+        } else if (style === 'Reveal & Conceal') {
+          // bricks sweep the content IN, then bricks sweep across again to conceal it
+          lc.globalCompositeOperation = 'destination-in'; lc.drawImage(brickEdgeMask(revP.x, revP.y), 0, 0);
+          lc.globalCompositeOperation = 'destination-out'; lc.drawImage(brickEdgeMask(conP.x, conP.y), 0, 0);
+          lc.globalCompositeOperation = 'source-over';
+        } else { // Wipe — bricks sweep the content in and keep it
+          lc.globalCompositeOperation = 'destination-in'; lc.drawImage(brickEdgeMask(lightX, lightY), 0, 0);
           lc.globalCompositeOperation = 'source-over';
         }
 
