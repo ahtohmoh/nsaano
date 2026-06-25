@@ -133,6 +133,12 @@
 
 /* ── control panel ── */
 .panel-body { flex: 1; min-height: 0; overflow-y: auto; }
+.panel-presets { display: flex; align-items: center; gap: 8px; padding: 12px 18px; border-bottom: 1px solid var(--line); background: var(--pane-2); }
+.preset-label { font-size: var(--label); letter-spacing: var(--tracking); text-transform: uppercase; color: var(--text-faint); }
+.preset-select { flex: 1; min-width: 0; }
+.preset-save { padding: 7px 11px; font-size: 11px; }
+.preset-del { padding: 7px 9px; font-size: 11px; }
+.preset-del:disabled { opacity: 0.35; cursor: default; }
 .panel-section { border-bottom: 1px solid var(--line); }
 .section-head {
   width: 100%; display: flex; align-items: center; justify-content: space-between;

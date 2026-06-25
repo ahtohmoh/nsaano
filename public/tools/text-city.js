@@ -28,7 +28,32 @@ function blendOp(name) {
   return n.toLowerCase().replace(/\s+/g, '-');
 }
 
+// An alpha "light band" gradient centred on the current sweep position — used as a
+// destination-in mask so a headline/image is visible only where the light is.
+function bandGradient(c, dir, lx, ly, lw, soft) {
+  let p0, p1;
+  if (dir === 'Top to Bottom') { p0 = [0, ly - lw]; p1 = [0, ly + lw]; }
+  else if (dir === 'Diagonal') { const cc = (lx + ly) / 2; p0 = [cc - lw, cc - lw]; p1 = [cc + lw, cc + lw]; }
+  else { p0 = [lx - lw, 0]; p1 = [lx + lw, 0]; } // Left↔Right (lx already encodes direction)
+  const g = c.createLinearGradient(p0[0], p0[1], p1[0], p1[1]);
+  const core = Math.max(0.02, Math.min(0.96, soft));
+  g.addColorStop(0, 'rgba(255,255,255,0)');
+  g.addColorStop(Math.max(0.001, 0.5 - core / 2), 'rgba(255,255,255,1)');
+  g.addColorStop(Math.min(0.999, 0.5 + core / 2), 'rgba(255,255,255,1)');
+  g.addColorStop(1, 'rgba(255,255,255,0)');
+  return g;
+}
+
 const controlSchema = [
+  { title: 'Reveal', fields: [
+    { type: 'note', text: 'What the light sweep reveals. Headline / Image appear only where the light is — they surface, then vanish. Very Piqabu.' },
+    { key: 'revealMode', type: 'segmented', label: 'Reveal', options: ['Bricks', 'Headline', 'Image'] },
+    { key: 'headlineText', type: 'textarea', label: 'Headline', rows: 3, placeholder: 'PIQABU\nNOWHERE ELSE' },
+    { key: 'headlineSize', type: 'slider', label: 'Headline Size', min: 24, max: 480, step: 2 },
+    { key: 'headlineColor', type: 'color', label: 'Headline Color' },
+    { key: 'revealImage', type: 'image', label: 'Reveal Image' },
+    { key: 'revealFit', type: 'select', label: 'Image Fit', options: ['Cover', 'Contain'] }
+  ] },
   { title: 'Mode & Layout', fields: [
     { key: 'canvasRatio', type: 'select', label: 'Canvas Aspect Ratio', options: RATIO_OPTIONS },
     { key: 'playing', type: 'toggle', label: 'Animate' },
@@ -98,6 +123,7 @@ const controlSchema = [
 
 const defaults = {
   canvasRatio: 'Landscape: 1200 x 800 (3:2)', canvasWidth: 1200, canvasHeight: 800,
+  revealMode: 'Bricks', headlineText: 'PIQABU\nNOWHERE ELSE', headlineSize: 150, headlineColor: '#FFFFFF', revealImage: '', revealFit: 'Contain',
   text: 'TEXT CITY\n*\nINFORMATION\n.\nWALL\nBRICK\nBY\nBRICK\nLIGHT\nSWEEP\n/\nGENERATIVE\nSYSTEM',
   playing: true, animSpeed: 14,
   lightDir: 'Diagonal', lightWidth: 277, lightSoftness: 84, fadeGamma: 3.3,
@@ -118,6 +144,12 @@ export default {
   description: 'Word "bricks" tiled across the canvas, revealed by a soft moving light sweep. A generative information-wall.',
   controlSchema,
   defaults,
+  presets: [
+    { name: 'Piqabu · Ephemeral', values: { revealMode: 'Headline', headlineText: 'PIQABU\nNOWHERE ELSE', headlineColor: '#FFFFFF', headlineSize: 150, fontFamily: 'Inter', fontWeight: 600, bgMode: 'Solid', bgColor: '#080808', bgDim: 0, textBlend: 'Normal', textAlpha: 100, animSpeed: 8, lightDir: 'Left to Right', lightWidth: 340, lightSoftness: 64, fadeGamma: 2.4 } },
+    { name: 'Information Wall', values: { revealMode: 'Bricks', blockColorMode: 'Palette', bgMode: 'Solid', bgColor: '#0A0A0A', bgDim: 5, animSpeed: 14, lightDir: 'Diagonal', lightWidth: 277, lightSoftness: 84, fadeGamma: 3.3, blockBaseOpacity: 90, textBlend: 'Difference' } },
+    { name: 'Mono · Quiet', values: { revealMode: 'Bricks', blockColorMode: 'Single', blockColorSingle: '#FFFFFF', bgMode: 'Solid', bgColor: '#080808', bgDim: 0, animSpeed: 7, lightDir: 'Diagonal', lightWidth: 240, lightSoftness: 70, fadeGamma: 3, blockBaseOpacity: 85, textBlend: 'Difference' } },
+    { name: 'Spotlight · Image', values: { revealMode: 'Image', revealFit: 'Contain', bgMode: 'Solid', bgColor: '#050505', bgDim: 0, animSpeed: 9, lightDir: 'Left to Right', lightWidth: 380, lightSoftness: 58, fadeGamma: 2.2, textAlpha: 100 } }
+  ],
 
   init(host) {
     const { canvas, ctx, controls } = host;
@@ -126,6 +158,7 @@ export default {
     let lastW = 0, lastH = 0, needsLayout = true;
     let phase = 0, lastTs = null;
     const imgCache = new Map();
+    const layer = document.createElement('canvas'); // offscreen for headline/image reveal
 
     function loadImg(url) {
       if (!url) return null;
@@ -296,25 +329,57 @@ export default {
       const fam = fontFamily();
       const rowHeight = controls.get('rowHeight');
 
-      bricks.forEach((b) => {
-        let dist = 0;
-        if (dir === 'Left to Right' || dir === 'Right to Left') dist = Math.abs(b.x + b.w / 2 - lightX) / lightWidth;
-        else if (dir === 'Top to Bottom') dist = Math.abs(b.y + b.h / 2 - lightY) / lightWidth;
-        else { const proj = (b.x + b.w / 2 + b.y + b.h / 2) / Math.sqrt(2); const lp = (lightX + lightY) / Math.sqrt(2); dist = Math.abs(proj - lp) / lightWidth; }
-        const lightVal = Math.exp(-Math.pow(dist / (softness || 0.01), 2));
-        const visibility = Math.pow(Math.max(0, Math.min(1, lightVal)), gamma);
-        if (visibility < 0.001) return;
-        const alpha = baseOpacity * visibility;
+      const revealMode = controls.get('revealMode') || 'Bricks';
 
-        ctx.save(); ctx.globalAlpha = alpha; ctx.fillStyle = b.color;
-        drawRoundedRect(ctx, b.x, b.y, b.w, b.h, b.radius); ctx.fill();
-        drawBrickTexture(b, alpha); ctx.restore();
+      if (revealMode === 'Bricks') {
+        bricks.forEach((b) => {
+          let dist = 0;
+          if (dir === 'Left to Right' || dir === 'Right to Left') dist = Math.abs(b.x + b.w / 2 - lightX) / lightWidth;
+          else if (dir === 'Top to Bottom') dist = Math.abs(b.y + b.h / 2 - lightY) / lightWidth;
+          else { const proj = (b.x + b.w / 2 + b.y + b.h / 2) / Math.sqrt(2); const lp = (lightX + lightY) / Math.sqrt(2); dist = Math.abs(proj - lp) / lightWidth; }
+          const lightVal = Math.exp(-Math.pow(dist / (softness || 0.01), 2));
+          const visibility = Math.pow(Math.max(0, Math.min(1, lightVal)), gamma);
+          if (visibility < 0.001) return;
+          const alpha = baseOpacity * visibility;
 
-        ctx.save(); ctx.globalAlpha = visibility * textAlpha; ctx.globalCompositeOperation = textBlend;
-        ctx.fillStyle = textColor; ctx.font = `${weight} ${rowHeight * 0.4 * b.scale}px ${fam}`;
-        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        ctx.fillText(b.text, b.x + b.w / 2, b.y + b.h / 2); ctx.restore();
-      });
+          ctx.save(); ctx.globalAlpha = alpha; ctx.fillStyle = b.color;
+          drawRoundedRect(ctx, b.x, b.y, b.w, b.h, b.radius); ctx.fill();
+          drawBrickTexture(b, alpha); ctx.restore();
+
+          ctx.save(); ctx.globalAlpha = visibility * textAlpha; ctx.globalCompositeOperation = textBlend;
+          ctx.fillStyle = textColor; ctx.font = `${weight} ${rowHeight * 0.4 * b.scale}px ${fam}`;
+          ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+          ctx.fillText(b.text, b.x + b.w / 2, b.y + b.h / 2); ctx.restore();
+        });
+      } else {
+        // Headline / Image — rendered to an offscreen layer, then masked to the light band
+        layer.width = w; layer.height = h;
+        const lc = layer.getContext('2d'); lc.clearRect(0, 0, w, h);
+        if (revealMode === 'Image') {
+          const e = loadImg(controls.get('revealImage'));
+          if (e && e.ready && e.el.naturalWidth > 0) {
+            const fit = (controls.get('revealFit') || 'Contain').toLowerCase();
+            const iw = e.el.naturalWidth, ih = e.el.naturalHeight;
+            const sc = fit === 'cover' ? Math.max(w / iw, h / ih) : Math.min(w / iw, h / ih);
+            const dw = iw * sc, dh = ih * sc; lc.drawImage(e.el, (w - dw) / 2, (h - dh) / 2, dw, dh);
+          }
+        } else {
+          const hs = controls.get('headlineSize') || 150;
+          lc.fillStyle = controls.get('headlineColor') || '#fff';
+          lc.font = `${weight} ${hs}px ${fam}`; lc.textAlign = 'center'; lc.textBaseline = 'middle';
+          const lines = String(controls.get('headlineText') || '').split('\n');
+          const lh = hs * 1.18; let yy = h / 2 - (lines.length - 1) * lh / 2;
+          for (const ln of lines) { lc.fillText(ln, w / 2, yy); yy += lh; }
+        }
+        lc.globalCompositeOperation = 'destination-in';
+        lc.fillStyle = bandGradient(lc, dir, lightX, lightY, lightWidth, softness);
+        lc.fillRect(0, 0, w, h);
+        lc.globalCompositeOperation = 'source-over';
+
+        ctx.save(); ctx.globalAlpha = textAlpha;
+        if (revealMode === 'Headline') ctx.globalCompositeOperation = textBlend;
+        ctx.drawImage(layer, 0, 0); ctx.restore();
+      }
     };
 
     this._dispose = function dispose() {

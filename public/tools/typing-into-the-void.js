@@ -227,6 +227,12 @@ export default {
   description: 'A keyboard-typing animation: text types itself across a glowing keyboard, with overlays, a gallery mode, and ambient glow. Tuned for Piqabu social posts.',
   controlSchema,
   defaults,
+  presets: [
+    { name: 'Privacy · Made Quiet', values: { keySkin: 'Classic', keyMaterial: 'Glass', keyShape: 'Rounded', goldLegends: false, keyMotifs: false, fillColor: '#FFFFFF', strokeColor: '#FFFFFF', glowColor: '#FFFFFF', canvasGlowColor: '#FFFFFF', bgMode: 'Solid', bgColor: '#000000' } },
+    { name: 'Jade & Gold', values: { keySkin: 'Jade Resin', keyShape: 'Hex', goldLegends: true, keyMotifs: true, motifDensity: 30, motifColor: '#D9B45B', fillColor: '#7CA56A', glowColor: '#9FE3B0', canvasGlowColor: '#7CFFB0', bgMode: 'Solid', bgColor: '#0A140C' } },
+    { name: 'Red Marble', values: { keySkin: 'Marble', keyShape: 'Rounded', goldLegends: true, keyMotifs: false, fillColor: '#7C1322', glowColor: '#D9B45B', canvasGlowColor: '#B8860B', bgMode: 'Solid', bgColor: '#0A0608' } },
+    { name: 'Neon Arcade', values: { keySkin: 'Neon Arcade', keyShape: 'Rounded', goldLegends: false, keyMotifs: false, fillColor: '#1A0033', strokeColor: '#FF00FF', glowColor: '#FF00FF', canvasGlowColor: '#FF2D95', bgMode: 'Solid', bgColor: '#05000A' } }
+  ],
 
   init(host) {
     const { canvas, ctx, controls, runtime } = host;
