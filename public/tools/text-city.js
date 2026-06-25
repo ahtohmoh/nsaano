@@ -60,9 +60,10 @@ function revealMask(c, dir, lx, ly, lw, soft, style) {
 
 const controlSchema = [
   { title: 'Reveal', fields: [
-    { type: 'note', text: 'The light sweep can reveal a headline, image, or background. Wipe = the light paints it in and keeps it (a reveal transition); Spotlight = it shows only where the light is, then vanishes.' },
-    { key: 'revealMode', type: 'segmented', label: 'Reveal', options: ['Bricks', 'Headline', 'Image'] },
-    { key: 'revealStyle', type: 'segmented', label: 'Reveal Style', options: ['Wipe', 'Spotlight'] },
+    { type: 'note', text: 'How the sweep works. Bricks = the word grid. Brick Mosaic = the bricks are windows that reveal a headline/image behind them. Headline / Image = the light reveals the content directly.' },
+    { key: 'revealMode', type: 'segmented', label: 'Reveal', options: ['Bricks', 'Brick Mosaic', 'Headline', 'Image'] },
+    { key: 'mosaicContent', type: 'segmented', label: 'Mosaic Reveals', options: ['Headline', 'Image'] },
+    { key: 'revealStyle', type: 'select', label: 'Reveal Style', options: ['Wipe', 'Spotlight', 'Reveal & Conceal'] },
     { key: 'headlineText', type: 'textarea', label: 'Headline', rows: 3, placeholder: 'PIQABU\nNOWHERE ELSE' },
     { key: 'headlineSize', type: 'slider', label: 'Headline Size', min: 24, max: 480, step: 2 },
     { key: 'headlineColor', type: 'color', label: 'Headline Color' },
@@ -138,7 +139,7 @@ const controlSchema = [
 
 const defaults = {
   canvasRatio: 'Landscape: 1200 x 800 (3:2)', canvasWidth: 1200, canvasHeight: 800,
-  revealMode: 'Bricks', revealStyle: 'Wipe', headlineText: 'PIQABU\nNOWHERE ELSE', headlineSize: 150, headlineColor: '#FFFFFF', revealImage: '', revealFit: 'Contain',
+  revealMode: 'Bricks', mosaicContent: 'Headline', revealStyle: 'Wipe', headlineText: 'PIQABU\nNOWHERE ELSE', headlineSize: 150, headlineColor: '#FFFFFF', revealImage: '', revealFit: 'Contain',
   text: 'TEXT CITY\n*\nINFORMATION\n.\nWALL\nBRICK\nBY\nBRICK\nLIGHT\nSWEEP\n/\nGENERATIVE\nSYSTEM',
   playing: true, animSpeed: 14,
   lightDir: 'Diagonal', lightWidth: 277, lightSoftness: 84, fadeGamma: 3.3,
@@ -160,6 +161,9 @@ export default {
   controlSchema,
   defaults,
   presets: [
+    { name: 'Brick Reveal · Headline', values: { revealMode: 'Brick Mosaic', mosaicContent: 'Headline', revealStyle: 'Wipe', headlineText: 'PIQABU\nNOWHERE ELSE', headlineColor: '#FFFFFF', headlineSize: 170, fontFamily: 'Inter', fontWeight: 700, bgMode: 'Solid', bgColor: '#080808', bgDim: 0, textBlend: 'Normal', animSpeed: 10, lightDir: 'Diagonal', lightWidth: 300, lightSoftness: 60, rowHeight: 47, minScale: 47, maxScale: 132, maxRadius: 8 } },
+    { name: 'Brick Reveal · Image', values: { revealMode: 'Brick Mosaic', mosaicContent: 'Image', revealStyle: 'Wipe', revealFit: 'Cover', bgMode: 'Solid', bgColor: '#080808', bgDim: 0, animSpeed: 10, lightDir: 'Diagonal', lightWidth: 300, lightSoftness: 60, maxRadius: 8 } },
+    { name: 'Brick Reveal & Conceal', values: { revealMode: 'Brick Mosaic', mosaicContent: 'Headline', revealStyle: 'Reveal & Conceal', headlineText: 'PIQABU\nNOWHERE ELSE', headlineColor: '#FFFFFF', headlineSize: 170, fontFamily: 'Inter', fontWeight: 700, bgMode: 'Solid', bgColor: '#080808', bgDim: 0, textBlend: 'Normal', animSpeed: 7, lightDir: 'Left to Right', lightWidth: 280, lightSoftness: 55, maxRadius: 8 } },
     { name: 'Piqabu · Reveal Wipe', values: { revealMode: 'Headline', revealStyle: 'Wipe', headlineText: 'PIQABU\nNOWHERE ELSE', headlineColor: '#FFFFFF', headlineSize: 150, fontFamily: 'Inter', fontWeight: 600, bgMode: 'Solid', bgColor: '#080808', bgDim: 0, textBlend: 'Normal', textAlpha: 100, animSpeed: 9, lightDir: 'Left to Right', lightWidth: 320, lightSoftness: 70, fadeGamma: 2.4 } },
     { name: 'Piqabu · Ephemeral', values: { revealMode: 'Headline', revealStyle: 'Spotlight', headlineText: 'PIQABU\nNOWHERE ELSE', headlineColor: '#FFFFFF', headlineSize: 150, fontFamily: 'Inter', fontWeight: 600, bgMode: 'Solid', bgColor: '#080808', bgDim: 0, textBlend: 'Normal', textAlpha: 100, animSpeed: 8, lightDir: 'Left to Right', lightWidth: 340, lightSoftness: 64, fadeGamma: 2.4 } },
     { name: 'Reveal Image (Wipe)', values: { revealMode: 'Image', revealStyle: 'Wipe', revealFit: 'Cover', bgMode: 'Solid', bgColor: '#050505', bgDim: 0, animSpeed: 9, lightDir: 'Left to Right', lightWidth: 360, lightSoftness: 66 } },
@@ -175,7 +179,8 @@ export default {
     let lastW = 0, lastH = 0, needsLayout = true;
     let phase = 0, lastTs = null;
     const imgCache = new Map();
-    const layer = document.createElement('canvas'); // offscreen for headline/image reveal
+    const layer = document.createElement('canvas'); // offscreen content (headline/image)
+    const maskLayer = document.createElement('canvas'); // offscreen brick stencil for Brick Mosaic
 
     function loadImg(url) {
       if (!url) return null;
@@ -339,6 +344,16 @@ export default {
       else if (dir === 'Top to Bottom') lightY = -lightWidth + loopT * rangeY;
       else if (dir === 'Diagonal') { lightX = -lightWidth + loopT * rangeX; lightY = -lightWidth + loopT * rangeY; }
 
+      // light position at an arbitrary 0..1 progress (used for the reveal & conceal phases)
+      const lightAt = (progress) => {
+        let lx = 0, ly = 0;
+        if (dir === 'Left to Right') lx = -lightWidth + progress * rangeX;
+        else if (dir === 'Right to Left') lx = w + lightWidth - progress * rangeX;
+        else if (dir === 'Top to Bottom') ly = -lightWidth + progress * rangeY;
+        else { lx = -lightWidth + progress * rangeX; ly = -lightWidth + progress * rangeY; }
+        return { x: lx, y: ly };
+      };
+
       const textColor = controls.get('textColor');
       const textAlpha = controls.get('textAlpha') / 100;
       const textBlend = blendOp(controls.get('textBlend'));
@@ -369,10 +384,13 @@ export default {
           ctx.fillText(b.text, b.x + b.w / 2, b.y + b.h / 2); ctx.restore();
         });
       } else {
-        // Headline / Image — rendered to an offscreen layer, then masked to the light band
+        const style = controls.get('revealStyle') || 'Wipe';
+        const content = (revealMode === 'Brick Mosaic') ? (controls.get('mosaicContent') || 'Headline') : revealMode;
+
+        // 1) render the content (headline or image) to the content layer
         layer.width = w; layer.height = h;
         const lc = layer.getContext('2d'); lc.clearRect(0, 0, w, h);
-        if (revealMode === 'Image') {
+        if (content === 'Image') {
           const e = loadImg(controls.get('revealImage'));
           if (e && e.ready && e.el.naturalWidth > 0) {
             const fit = (controls.get('revealFit') || 'Contain').toLowerCase();
@@ -388,13 +406,60 @@ export default {
           const lh = hs * 1.18; let yy = h / 2 - (lines.length - 1) * lh / 2;
           for (const ln of lines) { lc.fillText(ln, w / 2, yy); yy += lh; }
         }
-        lc.globalCompositeOperation = 'destination-in';
-        lc.fillStyle = revealMask(lc, dir, lightX, lightY, lightWidth, softness, controls.get('revealStyle') || 'Wipe');
-        lc.fillRect(0, 0, w, h);
-        lc.globalCompositeOperation = 'source-over';
 
+        // 2) mask the content
+        if (revealMode === 'Brick Mosaic') {
+          // The bricks are the stencil: each lit brick is a window onto the content behind it.
+          maskLayer.width = w; maskLayer.height = h;
+          const mc = maskLayer.getContext('2d'); mc.clearRect(0, 0, w, h); mc.fillStyle = '#fff';
+          const feather = Math.max(2, lightWidth * (0.12 + Math.min(1, softness) * 0.9));
+          const passed = (bx, by, lx, ly) => {
+            let d;
+            if (dir === 'Left to Right') d = lx - bx;
+            else if (dir === 'Right to Left') d = bx - lx;
+            else if (dir === 'Top to Bottom') d = ly - by;
+            else d = ((lx + ly) - (bx + by)) / Math.SQRT2;
+            return Math.max(0, Math.min(1, d / feather + 0.5));
+          };
+          const revP = lightAt(Math.min(1, loopT * 2));
+          const conP = lightAt(Math.max(0, (loopT - 0.5) * 2));
+          bricks.forEach((b) => {
+            const bx = b.x + b.w / 2, by = b.y + b.h / 2;
+            let a;
+            if (style === 'Spotlight') {
+              let dist;
+              if (dir === 'Left to Right' || dir === 'Right to Left') dist = Math.abs(bx - lightX) / lightWidth;
+              else if (dir === 'Top to Bottom') dist = Math.abs(by - lightY) / lightWidth;
+              else dist = Math.abs((bx + by) - (lightX + lightY)) / (lightWidth * Math.SQRT2);
+              a = Math.pow(Math.max(0, Math.min(1, Math.exp(-Math.pow(dist / (softness || 0.01), 2)))), gamma);
+            } else if (style === 'Reveal & Conceal') {
+              a = passed(bx, by, revP.x, revP.y) * (1 - passed(bx, by, conP.x, conP.y));
+            } else { // Wipe — reveal and hold
+              a = passed(bx, by, lightX, lightY);
+            }
+            if (a <= 0.004) return;
+            mc.globalAlpha = a; drawRoundedRect(mc, b.x, b.y, b.w, b.h, b.radius); mc.fill();
+          });
+          mc.globalAlpha = 1;
+          lc.globalCompositeOperation = 'destination-in'; lc.drawImage(maskLayer, 0, 0); lc.globalCompositeOperation = 'source-over';
+        } else if (style === 'Reveal & Conceal') {
+          // reveal wipe in, then a second wipe conceals it
+          const revP = lightAt(Math.min(1, loopT * 2));
+          const conP = lightAt(Math.max(0, (loopT - 0.5) * 2));
+          lc.globalCompositeOperation = 'destination-in';
+          lc.fillStyle = revealMask(lc, dir, revP.x, revP.y, lightWidth, softness, 'Wipe'); lc.fillRect(0, 0, w, h);
+          lc.globalCompositeOperation = 'destination-out';
+          lc.fillStyle = revealMask(lc, dir, conP.x, conP.y, lightWidth, softness, 'Wipe'); lc.fillRect(0, 0, w, h);
+          lc.globalCompositeOperation = 'source-over';
+        } else {
+          lc.globalCompositeOperation = 'destination-in';
+          lc.fillStyle = revealMask(lc, dir, lightX, lightY, lightWidth, softness, style); lc.fillRect(0, 0, w, h);
+          lc.globalCompositeOperation = 'source-over';
+        }
+
+        // 3) composite onto the canvas (over the background)
         ctx.save(); ctx.globalAlpha = textAlpha;
-        if (revealMode === 'Headline') ctx.globalCompositeOperation = textBlend;
+        if (content === 'Headline') ctx.globalCompositeOperation = textBlend;
         ctx.drawImage(layer, 0, 0); ctx.restore();
       }
     };
