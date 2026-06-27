@@ -41,6 +41,7 @@ let stageTeardown = null;
 
 function onToolChange(a) {
   active = a;
+  window.__nsaanoActive = a; // debug hook: lets tooling step a deterministic frame
   toolNameEl.textContent = a.def.name;
   if (panelTeardown) panelTeardown();
   panelTeardown = renderPanel(panelHost, a.def, a.controls);

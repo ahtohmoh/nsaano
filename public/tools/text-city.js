@@ -11,6 +11,15 @@ const RATIO_OPTIONS = [
 
 function seededRandom(seed) { const x = Math.sin(seed) * 10000; return x - Math.floor(x); }
 
+// Draw an image/video element cover-fit into (0,0,dw,dh). Used to fill bricks with a
+// canvas-spanning source, so each (clipped) brick reveals its region of the image/video.
+function drawCover(ctx, el, dw, dh) {
+  const iw = el.naturalWidth || el.videoWidth, ih = el.naturalHeight || el.videoHeight;
+  if (!iw || !ih) return;
+  const sc = Math.max(dw / iw, dh / ih); const w2 = iw * sc, h2 = ih * sc;
+  ctx.drawImage(el, (dw - w2) / 2, (dh - h2) / 2, w2, h2);
+}
+
 function drawRoundedRect(ctx, x, y, w, h, r) {
   r = Math.max(0, Math.min(r, Math.min(w, h) / 2));
   ctx.beginPath();
@@ -60,8 +69,11 @@ function revealMask(c, dir, lx, ly, lw, soft, style) {
 
 const controlSchema = [
   { title: 'Reveal', fields: [
-    { type: 'note', text: 'How the sweep works. Bricks = the word grid. Brick Mosaic = the bricks are windows that reveal a headline/image behind them. Headline / Image = the light reveals the content directly.' },
+    { type: 'note', text: 'Bricks = the original word-brick sweep, where each brick can be a window onto an Image / Video / Headline / Solid behind it (Brick Fill). Brick Mosaic / Headline / Image = the other reveal styles.' },
     { key: 'revealMode', type: 'segmented', label: 'Reveal', options: ['Bricks', 'Brick Mosaic', 'Headline', 'Image'] },
+    { key: 'brickFill', type: 'select', label: 'Brick Fill (Bricks mode)', options: ['Color', 'Image', 'Video', 'Headline'] },
+    { key: 'brickWords', type: 'toggle', label: 'Show Brick Words' },
+    { key: 'brickVideoFile', type: 'video', label: 'Brick Video' },
     { key: 'mosaicContent', type: 'segmented', label: 'Mosaic Reveals', options: ['Headline', 'Image'] },
     { key: 'revealStyle', type: 'select', label: 'Reveal Style', options: ['Wipe', 'Spotlight', 'Reveal & Conceal'] },
     { key: 'headlineText', type: 'textarea', label: 'Headline', rows: 3, placeholder: 'PIQABU\nNOWHERE ELSE' },
@@ -139,7 +151,7 @@ const controlSchema = [
 
 const defaults = {
   canvasRatio: 'Landscape: 1200 x 800 (3:2)', canvasWidth: 1200, canvasHeight: 800,
-  revealMode: 'Bricks', mosaicContent: 'Headline', revealStyle: 'Wipe', headlineText: 'PIQABU\nNOWHERE ELSE', headlineSize: 150, headlineColor: '#FFFFFF', revealImage: '', revealFit: 'Contain',
+  revealMode: 'Bricks', brickFill: 'Color', brickWords: true, brickVideoFile: '', mosaicContent: 'Headline', revealStyle: 'Wipe', headlineText: 'PIQABU\nNOWHERE ELSE', headlineSize: 150, headlineColor: '#FFFFFF', revealImage: '', revealFit: 'Contain',
   text: 'TEXT CITY\n*\nINFORMATION\n.\nWALL\nBRICK\nBY\nBRICK\nLIGHT\nSWEEP\n/\nGENERATIVE\nSYSTEM',
   playing: true, animSpeed: 14,
   lightDir: 'Diagonal', lightWidth: 277, lightSoftness: 84, fadeGamma: 3.3,
@@ -161,6 +173,9 @@ export default {
   controlSchema,
   defaults,
   presets: [
+    { name: 'Bricks → Image', values: { revealMode: 'Bricks', brickFill: 'Image', brickWords: false, revealFit: 'Cover', bgMode: 'Solid', bgColor: '#080808', animSpeed: 12, lightDir: 'Diagonal', lightWidth: 277, lightSoftness: 84, fadeGamma: 3.3, blockBaseOpacity: 100, rowHeight: 52, maxRadius: 6 } },
+    { name: 'Bricks → Image + Words', values: { revealMode: 'Bricks', brickFill: 'Image', brickWords: true, revealFit: 'Cover', textColor: '#FFFFFF', textBlend: 'Difference', bgMode: 'Solid', bgColor: '#080808', animSpeed: 12, lightDir: 'Diagonal', lightWidth: 277, lightSoftness: 84, fadeGamma: 3.3, blockBaseOpacity: 100, rowHeight: 52, maxRadius: 6 } },
+    { name: 'Bricks → Headline', values: { revealMode: 'Bricks', brickFill: 'Headline', brickWords: false, headlineText: 'PIQABU\nNOWHERE ELSE', headlineColor: '#FFFFFF', headlineSize: 220, fontFamily: 'Inter', fontWeight: 800, bgMode: 'Solid', bgColor: '#080808', animSpeed: 11, lightDir: 'Left to Right', lightWidth: 300, lightSoftness: 80, fadeGamma: 3, blockBaseOpacity: 100, rowHeight: 44, maxRadius: 6 } },
     { name: 'Brick Reveal · Headline', values: { revealMode: 'Brick Mosaic', mosaicContent: 'Headline', revealStyle: 'Wipe', headlineText: 'PIQABU\nNOWHERE ELSE', headlineColor: '#FFFFFF', headlineSize: 170, fontFamily: 'Inter', fontWeight: 700, bgMode: 'Solid', bgColor: '#080808', bgDim: 0, textBlend: 'Normal', animSpeed: 10, lightDir: 'Diagonal', lightWidth: 300, lightSoftness: 60, rowHeight: 47, minScale: 47, maxScale: 132, maxRadius: 8 } },
     { name: 'Brick Reveal · Image', values: { revealMode: 'Brick Mosaic', mosaicContent: 'Image', revealStyle: 'Wipe', revealFit: 'Cover', bgMode: 'Solid', bgColor: '#080808', bgDim: 0, animSpeed: 10, lightDir: 'Diagonal', lightWidth: 300, lightSoftness: 60, maxRadius: 8 } },
     { name: 'Brick Reveal & Conceal', values: { revealMode: 'Brick Mosaic', mosaicContent: 'Headline', revealStyle: 'Reveal & Conceal', headlineText: 'PIQABU\nNOWHERE ELSE', headlineColor: '#FFFFFF', headlineSize: 170, fontFamily: 'Inter', fontWeight: 700, bgMode: 'Solid', bgColor: '#080808', bgDim: 0, textBlend: 'Normal', animSpeed: 7, lightDir: 'Left to Right', lightWidth: 280, lightSoftness: 55, maxRadius: 8 } },
@@ -181,6 +196,19 @@ export default {
     const imgCache = new Map();
     const layer = document.createElement('canvas'); // offscreen content (headline/image)
     const maskLayer = document.createElement('canvas'); // offscreen brick stencil for Brick Mosaic
+    let brickVidEl = null, brickVidReady = false, lastBrickVid = '';
+
+    function updateBrickVideo() {
+      const url = controls.get('brickVideoFile');
+      if (!url) { if (brickVidEl) { brickVidEl.pause(); } brickVidEl = null; brickVidReady = false; lastBrickVid = ''; return; }
+      if (url === lastBrickVid) return;
+      lastBrickVid = url; brickVidReady = false;
+      const v = document.createElement('video');
+      if (!url.startsWith('data:') && !url.startsWith('blob:')) v.crossOrigin = 'anonymous';
+      v.src = url; v.muted = true; v.loop = true; v.playsInline = true;
+      v.addEventListener('loadeddata', () => { brickVidReady = true; v.play().catch(() => {}); });
+      brickVidEl = v;
+    }
 
     function loadImg(url) {
       if (!url) return null;
@@ -224,6 +252,8 @@ export default {
 
     function reset() { phase = 0; lastTs = null; needsLayout = true; }
     unsubs.push(controls.onAction('reset', reset));
+    unsubs.push(controls.onChange('brickVideoFile', updateBrickVideo));
+    updateBrickVideo();
 
     function fontFamily() { const f = controls.get('fontFamily') || 'monospace'; const fam = typeof f === 'string' ? f : (f.family || 'monospace'); return fam.includes(' ') ? `'${fam}'` : fam; }
 
@@ -364,6 +394,23 @@ export default {
       const revealMode = controls.get('revealMode') || 'Bricks';
 
       if (revealMode === 'Bricks') {
+        // Brick Fill: each brick can be a window onto a canvas-spanning source (image/video/
+        // headline) revealed by the same sweep, instead of a flat color.
+        const brickFill = controls.get('brickFill') || 'Color';
+        const brickWords = controls.get('brickWords') !== false;
+        let fillSrc = null;
+        if (brickFill === 'Image') { const e = loadImg(controls.get('revealImage')); if (e && e.ready && e.el.naturalWidth > 0) fillSrc = e.el; }
+        else if (brickFill === 'Video') { if (brickVidEl && brickVidReady && brickVidEl.videoWidth) fillSrc = brickVidEl; }
+        let headLayer = null;
+        if (brickFill === 'Headline') {
+          layer.width = w; layer.height = h; const hc = layer.getContext('2d'); hc.clearRect(0, 0, w, h);
+          const hs = controls.get('headlineSize') || 150; hc.fillStyle = controls.get('headlineColor') || '#fff';
+          hc.font = `${weight} ${hs}px ${fam}`; hc.textAlign = 'center'; hc.textBaseline = 'middle';
+          const lines = String(controls.get('headlineText') || '').split('\n'); const lh = hs * 1.18; let yy = h / 2 - (lines.length - 1) * lh / 2;
+          for (const ln of lines) { hc.fillText(ln, w / 2, yy); yy += lh; }
+          headLayer = layer;
+        }
+
         bricks.forEach((b) => {
           let dist = 0;
           if (dir === 'Left to Right' || dir === 'Right to Left') dist = Math.abs(b.x + b.w / 2 - lightX) / lightWidth;
@@ -374,14 +421,20 @@ export default {
           if (visibility < 0.001) return;
           const alpha = baseOpacity * visibility;
 
-          ctx.save(); ctx.globalAlpha = alpha; ctx.fillStyle = b.color;
-          drawRoundedRect(ctx, b.x, b.y, b.w, b.h, b.radius); ctx.fill();
+          ctx.save(); ctx.globalAlpha = alpha;
+          ctx.save(); drawRoundedRect(ctx, b.x, b.y, b.w, b.h, b.radius); ctx.clip();
+          if (fillSrc) drawCover(ctx, fillSrc, w, h);                 // brick reveals its slice of the image/video
+          else if (headLayer) ctx.drawImage(headLayer, 0, 0);         // brick reveals its slice of the headline
+          else { ctx.fillStyle = b.color; ctx.fillRect(b.x, b.y, b.w, b.h); } // original solid/palette color
+          ctx.restore();
           drawBrickTexture(b, alpha); ctx.restore();
 
-          ctx.save(); ctx.globalAlpha = visibility * textAlpha; ctx.globalCompositeOperation = textBlend;
-          ctx.fillStyle = textColor; ctx.font = `${weight} ${rowHeight * 0.4 * b.scale}px ${fam}`;
-          ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-          ctx.fillText(b.text, b.x + b.w / 2, b.y + b.h / 2); ctx.restore();
+          if (brickWords) {
+            ctx.save(); ctx.globalAlpha = visibility * textAlpha; ctx.globalCompositeOperation = textBlend;
+            ctx.fillStyle = textColor; ctx.font = `${weight} ${rowHeight * 0.4 * b.scale}px ${fam}`;
+            ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            ctx.fillText(b.text, b.x + b.w / 2, b.y + b.h / 2); ctx.restore();
+          }
         });
       } else {
         const style = controls.get('revealStyle') || 'Wipe';
@@ -485,6 +538,7 @@ export default {
 
     this._dispose = function dispose() {
       unsubs.forEach((u) => { try { u(); } catch (_) {} });
+      if (brickVidEl) { try { brickVidEl.pause(); brickVidEl.src = ''; } catch (_) {} }
       canvas.style.background = '';
     };
 
